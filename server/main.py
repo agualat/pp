@@ -1,10 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 from .router.ws import router as ws_router
 from .router.auth import router as auth_router
 from .router.ansible import router as ansible_router
 from .router.executions import router as executions_router
 from .router.servers import router as servers_router
+from .models.models import ServerCreate
+from .utils.db import get_db
 
 app = FastAPI()
 
@@ -31,3 +34,26 @@ app.include_router(auth_router)
 app.include_router(ansible_router)
 app.include_router(executions_router)
 app.include_router(servers_router)
+
+# Endpoint público para auto-registro de servidores (sin autenticación)
+from .CRUD.servers import create_server, get_server_by_ip, update_server
+
+@app.post("/api/server-config/register")
+def public_register_server(
+    payload: ServerCreate,
+    db: Session = Depends(get_db)
+):
+    """Endpoint público para que los clientes se auto-registren"""
+    # Buscar si ya existe por IP
+    existing = get_server_by_ip(db, payload.ip_address)
+    
+    if existing:
+        # Actualizar información del servidor existente
+        updates = {
+            "name": payload.name,
+            "ssh_user": payload.ssh_user
+        }
+        return update_server(db, existing.id, updates)
+    
+    # Crear nuevo servidor
+    return create_server(db, payload)

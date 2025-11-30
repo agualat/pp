@@ -56,6 +56,32 @@ async def unregister_from_client_background(server_id: int):
     )
 
 
+@router.post("/register", response_model=ServerResponse)
+def register_server_auto(
+    payload: ServerCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Auto-registra un servidor desde el cliente.
+    Si ya existe por IP, actualiza la información.
+    Si no existe, lo crea.
+    """
+    # Buscar si ya existe por IP
+    existing = get_server_by_ip(db, payload.ip_address)
+    
+    if existing:
+        # Actualizar información del servidor existente
+        updates = {
+            "name": payload.name,
+            "ssh_user": payload.ssh_user
+        }
+        updated = update_server(db, existing.id, updates)
+        return updated
+    
+    # Crear nuevo servidor
+    return create_server(db, payload)
+
+
 @router.post("/", response_model=ServerResponse)
 async def create_new_server(
     payload: ServerCreate, 

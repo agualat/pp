@@ -39,7 +39,9 @@ class ServerCreate(BaseModel):
     name: str
     ip_address: str
     ssh_user: str = "root"
-    ssh_password: str  # Password para configurar SSH key
+    ssh_password: str = ""  # Password opcional para configurar SSH key
+    ssh_port: int = 22
+    description: str = ""
 
 class ServerResponse(BaseModel):
     id: int
