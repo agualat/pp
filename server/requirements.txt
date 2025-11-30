@@ -3,7 +3,9 @@ uvicorn[standard]
 gunicorn
 sqlalchemy
 psycopg2-binary
-passlib[bcrypt]
+# Pin compatible versions to avoid bcrypt/passlib issues
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.1
 PyJWT
 celery
 kombu[sqlalchemy]
