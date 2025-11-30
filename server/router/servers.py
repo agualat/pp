@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List
+import os
 
 from ..utils.db import get_db
 from .auth import get_current_staff_user
@@ -26,18 +27,54 @@ from ..CRUD.servers import (
     count_servers,
     count_servers_by_status,
 )
+from ..utils.client_registration import register_server_in_client, unregister_server_from_client
 
 router = APIRouter(prefix="/servers", tags=["servers"], dependencies=[Depends(get_current_staff_user)])
 
+# URL del cliente desde variable de entorno
+CLIENT_URL = os.getenv("CLIENT_URL", "http://client:8100")
+
+
+async def register_in_client_background(server: Server):
+    """Tarea en background para registrar servidor en el cliente"""
+    await register_server_in_client(
+        client_url=CLIENT_URL,
+        server_id=server.id,
+        name=server.name,
+        ip_address=server.ip_address,
+        ssh_port=22,
+        ssh_user=server.ssh_user,
+        description=f"Server managed by {server.ssh_user}"
+    )
+
+
+async def unregister_from_client_background(server_id: int):
+    """Tarea en background para eliminar servidor del cliente"""
+    await unregister_server_from_client(
+        client_url=CLIENT_URL,
+        server_id=server_id
+    )
+
 
 @router.post("/", response_model=ServerResponse)
-def create_new_server(payload: ServerCreate, db: Session = Depends(get_db)):
+async def create_new_server(
+    payload: ServerCreate, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     # Validar que no exista servidor con mismo nombre o IP
     if get_server_by_name(db, payload.name):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Server name already exists")
     if get_server_by_ip(db, payload.ip_address):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="IP address already in use")
-    return create_server(db, payload)
+    
+    # Crear servidor en BD
+    new_server = create_server(db, payload)
+    
+    # Registrar en el cliente en background
+    background_tasks.add_task(register_in_client_background, new_server)
+    
+    return new_server
 
 
 @router.get("/{server_id}", response_model=ServerResponse)
@@ -158,10 +195,18 @@ def put_server_ip(server_id: int, ip_address: str, db: Session = Depends(get_db)
 
 
 @router.delete("/{server_id}")
-def remove_server(server_id: int, db: Session = Depends(get_db)):
+async def remove_server(
+    server_id: int, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     deleted = delete_server(db, server_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+    
+    # Eliminar del cliente en background
+    background_tasks.add_task(unregister_from_client_background, server_id)
+    
     return {"deleted": True}
 
 

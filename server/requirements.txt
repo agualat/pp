@@ -12,3 +12,4 @@ kombu[sqlalchemy]
 ansible-runner
 paramiko
 python-dotenv
+httpx

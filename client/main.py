@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from client.utils.metrics import get_system_info
 from client.utils.metrics_sender import start_sender, stop_sender
 from client.router.metrics import router as metrics_router
+from client.router.server_config import router as server_config_router
 
 
 @asynccontextmanager
@@ -34,3 +35,4 @@ async def websocket_status(ws: WebSocket):
         pass
 
 app.include_router(metrics_router)
+app.include_router(server_config_router)
