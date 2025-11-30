@@ -1,0 +1,157 @@
+from sqlalchemy.orm import Session
+from ..models.models import User, UserCreate
+from passlib.context import CryptContext
+from typing import List, Optional
+
+# Configuración para el hashing de contraseñas
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def hash_password(password: str) -> str:
+    """Hashea una contraseña"""
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verifica una contraseña contra su hash"""
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+# CREATE
+def create_user(db: Session, user: UserCreate) -> User:
+    """Crea un nuevo usuario en la base de datos"""
+    hashed_password = hash_password(user.password)
+    db_user = User(
+        username=user.username,
+        email=user.email,
+        password_hash=hashed_password,
+        is_admin=user.is_admin,
+        is_active=user.is_active
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
+# READ
+def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
+    """Obtiene un usuario por su ID"""
+    return db.query(User).filter(User.id == user_id).first()
+
+
+def get_user_by_username(db: Session, username: str) -> Optional[User]:
+    """Obtiene un usuario por su nombre de usuario"""
+    return db.query(User).filter(User.username == username).first()
+
+
+def get_user_by_email(db: Session, email: str) -> Optional[User]:
+    """Obtiene un usuario por su email"""
+    return db.query(User).filter(User.email == email).first()
+
+
+def get_all_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
+    """Obtiene todos los usuarios con paginación"""
+    return db.query(User).offset(skip).limit(limit).all()
+
+
+def get_active_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
+    """Obtiene todos los usuarios activos"""
+    return db.query(User).filter(User.is_active == 1).offset(skip).limit(limit).all()
+
+
+def get_admin_users(db: Session) -> List[User]:
+    """Obtiene todos los usuarios administradores"""
+    return db.query(User).filter(User.is_admin == 1).all()
+
+
+# UPDATE
+def update_user(db: Session, user_id: int, user_data: dict) -> Optional[User]:
+    """Actualiza los datos de un usuario"""
+    db_user = get_user_by_id(db, user_id)
+    if not db_user:
+        return None
+    
+    # Si se incluye una nueva contraseña, hashearla
+    if "password" in user_data:
+        user_data["password_hash"] = hash_password(user_data.pop("password"))
+    
+    # Actualizar los campos
+    for key, value in user_data.items():
+        if hasattr(db_user, key):
+            setattr(db_user, key, value)
+    
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
+def update_user_password(db: Session, user_id: int, new_password: str) -> Optional[User]:
+    """Actualiza solo la contraseña de un usuario"""
+    db_user = get_user_by_id(db, user_id)
+    if not db_user:
+        return None
+
+    # Use a query-based update to avoid assigning directly to the Column-typed attribute
+    hashed = hash_password(new_password)
+    db.query(User).filter(User.id == user_id).update({"password_hash": hashed})
+    db.commit()
+    # Return a fresh instance from the DB
+    return get_user_by_id(db, user_id)
+
+
+def deactivate_user(db: Session, user_id: int) -> Optional[User]:
+    """Desactiva un usuario (soft delete)"""
+    db_user = get_user_by_id(db, user_id)
+    if not db_user:
+        return None
+    
+    db.query(User).filter(User.id == user_id).update({"is_active": 0})
+    db.commit()
+    return get_user_by_id(db, user_id)
+
+
+def activate_user(db: Session, user_id: int) -> Optional[User]:
+    """Activa un usuario"""
+    db_user = get_user_by_id(db, user_id)
+    if not db_user:
+        return None
+    
+    db.query(User).filter(User.id == user_id).update({"is_active": 1})
+    db.commit()
+    return get_user_by_id(db, user_id)
+
+def toggle_admin(db: Session, user_id: int) -> Optional[User]:
+    """Alterna el estado de administrador de un usuario"""
+    db_user = get_user_by_id(db, user_id)
+    if not db_user:
+        return None
+    
+    new_value = 0 if getattr(db_user, 'is_admin') == 1 else 1
+    db.query(User).filter(User.id == user_id).update({"is_admin": new_value})
+    db.commit()
+    return get_user_by_id(db, user_id)
+
+# DELETE
+def delete_user(db: Session, user_id: int) -> bool:
+    """Elimina permanentemente un usuario de la base de datos"""
+    db_user = get_user_by_id(db, user_id)
+    if not db_user:
+        return False
+    
+    db.delete(db_user)
+    db.commit()
+    return True
+
+
+# AUTHENTICATION
+def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
+    """Autentica un usuario verificando sus credenciales"""
+    user = get_user_by_username(db, username)
+    if not user:
+        return None
+    if not verify_password(password, str(user.password_hash)):
+        return None
+    if getattr(user, 'is_active') == 0:
+        return None
+    return user
