@@ -4,7 +4,7 @@ from typing import List
 
 from ..utils.db import get_db
 from .auth import get_current_staff_user
-from ..models.models import Server, ServerCreate
+from ..models.models import Server, ServerCreate, ServerResponse
 from ..CRUD.servers import (
     create_server,
     get_server_by_id,
@@ -30,7 +30,7 @@ from ..CRUD.servers import (
 router = APIRouter(prefix="/servers", tags=["servers"], dependencies=[Depends(get_current_staff_user)])
 
 
-@router.post("/", response_model=Server)
+@router.post("/", response_model=ServerResponse)
 def create_new_server(payload: ServerCreate, db: Session = Depends(get_db)):
     # Validar que no exista servidor con mismo nombre o IP
     if get_server_by_name(db, payload.name):
@@ -40,7 +40,7 @@ def create_new_server(payload: ServerCreate, db: Session = Depends(get_db)):
     return create_server(db, payload)
 
 
-@router.get("/{server_id}", response_model=Server)
+@router.get("/{server_id}", response_model=ServerResponse)
 def read_server(server_id: int, db: Session = Depends(get_db)):
     server = get_server_by_id(db, server_id)
     if not server:
@@ -48,12 +48,12 @@ def read_server(server_id: int, db: Session = Depends(get_db)):
     return server
 
 
-@router.get("/", response_model=List[Server])
+@router.get("/", response_model=List[ServerResponse])
 def list_servers(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return get_all_servers(db, skip=skip, limit=limit)
 
 
-@router.get("/by-name/{name}", response_model=Server)
+@router.get("/by-name/{name}", response_model=ServerResponse)
 def read_server_by_name(name: str, db: Session = Depends(get_db)):
     server = get_server_by_name(db, name)
     if not server:
@@ -61,7 +61,7 @@ def read_server_by_name(name: str, db: Session = Depends(get_db)):
     return server
 
 
-@router.get("/by-ip/{ip_address}", response_model=Server)
+@router.get("/by-ip/{ip_address}", response_model=ServerResponse)
 def read_server_by_ip(ip_address: str, db: Session = Depends(get_db)):
     server = get_server_by_ip(db, ip_address)
     if not server:
@@ -69,22 +69,22 @@ def read_server_by_ip(ip_address: str, db: Session = Depends(get_db)):
     return server
 
 
-@router.get("/status/{status_filter}", response_model=List[Server])
+@router.get("/status/{status_filter}", response_model=List[ServerResponse])
 def list_servers_by_status(status_filter: str, db: Session = Depends(get_db)):
     return get_servers_by_status(db, status_filter)
 
 
-@router.get("/status/online/list", response_model=List[Server])
+@router.get("/status/online/list", response_model=List[ServerResponse])
 def list_online_servers(db: Session = Depends(get_db)):
     return get_online_servers(db)
 
 
-@router.get("/status/offline/list", response_model=List[Server])
+@router.get("/status/offline/list", response_model=List[ServerResponse])
 def list_offline_servers(db: Session = Depends(get_db)):
     return get_offline_servers(db)
 
 
-@router.patch("/{server_id}", response_model=Server)
+@router.patch("/{server_id}", response_model=ServerResponse)
 def patch_server(server_id: int, updates: dict, db: Session = Depends(get_db)):
     # Validar que el servidor exista
     if not get_server_by_id(db, server_id):
@@ -107,7 +107,7 @@ def patch_server(server_id: int, updates: dict, db: Session = Depends(get_db)):
     return updated
 
 
-@router.put("/{server_id}/status", response_model=Server)
+@router.put("/{server_id}/status", response_model=ServerResponse)
 def put_server_status(server_id: int, new_status: str, db: Session = Depends(get_db)):
     updated = update_server_status(db, server_id, new_status)
     if not updated:
@@ -115,7 +115,7 @@ def put_server_status(server_id: int, new_status: str, db: Session = Depends(get
     return updated
 
 
-@router.put("/{server_id}/online", response_model=Server)
+@router.put("/{server_id}/online", response_model=ServerResponse)
 def mark_server_online(server_id: int, db: Session = Depends(get_db)):
     updated = set_server_online(db, server_id)
     if not updated:
@@ -123,7 +123,7 @@ def mark_server_online(server_id: int, db: Session = Depends(get_db)):
     return updated
 
 
-@router.put("/{server_id}/offline", response_model=Server)
+@router.put("/{server_id}/offline", response_model=ServerResponse)
 def mark_server_offline(server_id: int, db: Session = Depends(get_db)):
     updated = set_server_offline(db, server_id)
     if not updated:
@@ -131,7 +131,7 @@ def mark_server_offline(server_id: int, db: Session = Depends(get_db)):
     return updated
 
 
-@router.put("/{server_id}/name", response_model=Server)
+@router.put("/{server_id}/name", response_model=ServerResponse)
 def put_server_name(server_id: int, name: str, db: Session = Depends(get_db)):
     # Validar unicidad
     existing = get_server_by_name(db, name)
@@ -144,7 +144,7 @@ def put_server_name(server_id: int, name: str, db: Session = Depends(get_db)):
     return updated
 
 
-@router.put("/{server_id}/ip", response_model=Server)
+@router.put("/{server_id}/ip", response_model=ServerResponse)
 def put_server_ip(server_id: int, ip_address: str, db: Session = Depends(get_db)):
     # Validar unicidad
     existing = get_server_by_ip(db, ip_address)
@@ -173,7 +173,7 @@ def remove_server_by_name(name: str, db: Session = Depends(get_db)):
     return {"deleted": True}
 
 
-@router.post("/bulk", response_model=List[Server])
+@router.post("/bulk", response_model=List[ServerResponse])
 def bulk_create_servers(payload: List[ServerCreate], db: Session = Depends(get_db)):
     # Validar duplicados antes de crear
     for server_data in payload:

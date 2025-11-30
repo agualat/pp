@@ -9,6 +9,7 @@ dist/
 build/
 *.manifest
 *.spec
+*.pyc
 
 # Virtual environments
 .venv/

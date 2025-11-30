@@ -41,6 +41,17 @@ class ServerCreate(BaseModel):
     ssh_user: str = "root"
     ssh_password: str  # Password para configurar SSH key
 
+class ServerResponse(BaseModel):
+    id: int
+    name: str
+    ip_address: str
+    status: str
+    ssh_user: str
+    ssh_private_key_path: str | None
+
+    class Config:
+        from_attributes = True
+
 class Server(Base):
     __tablename__ = "servers"
 
