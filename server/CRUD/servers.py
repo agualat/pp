@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from ..models.models import Server, ServerCreate
 from typing import List, Optional
 from ..utils.ssh import generate_ssh_keypair, deploy_ssh_key
+from ..utils.server_status import get_server_status
 
 
 # CREATE
@@ -36,10 +37,18 @@ def create_server(db: Session, server: ServerCreate) -> Server:
     return db_server
 
 
-# READ
-def get_server_by_id(db: Session, server_id: int) -> Optional[Server]:
-    """Obtiene un servidor por su ID"""
-    return db.query(Server).filter(Server.id == server_id).first()
+def get_server_by_id(db: Session, server_id: int, check_status: bool = True) -> Optional[Server]:
+    """Obtiene un servidor por su ID y actualiza su estado si check_status=True"""
+    server = db.query(Server).filter(Server.id == server_id).first()
+    
+    if server and check_status:
+        # Actualizar el estado real del servidor
+        real_status = get_server_status(server.ip_address)
+        if server.status != real_status:
+            server.status = real_status  # type: ignore
+            db.commit()
+    
+    return server
 
 
 def get_server_by_name(db: Session, name: str) -> Optional[Server]:
@@ -52,9 +61,19 @@ def get_server_by_ip(db: Session, ip_address: str) -> Optional[Server]:
     return db.query(Server).filter(Server.ip_address == ip_address).first()
 
 
-def get_all_servers(db: Session, skip: int = 0, limit: int = 100) -> List[Server]:
-    """Obtiene todos los servidores con paginación"""
-    return db.query(Server).offset(skip).limit(limit).all()
+def get_all_servers(db: Session, skip: int = 0, limit: int = 100, check_status: bool = True) -> List[Server]:
+    """Obtiene todos los servidores con paginación y actualiza su estado si check_status=True"""
+    servers = db.query(Server).offset(skip).limit(limit).all()
+    
+    if check_status:
+        # Actualizar el estado real de cada servidor
+        for server in servers:
+            real_status = get_server_status(server.ip_address)
+            if server.status != real_status:
+                server.status = real_status  # type: ignore
+        db.commit()
+    
+    return servers
 
 
 def get_servers_by_status(db: Session, status: str) -> List[Server]:
