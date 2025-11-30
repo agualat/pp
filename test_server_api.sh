@@ -150,8 +150,8 @@ response=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "$SERVER_DATA" \
-# Test 3: Verificar token
-echo -e "${YELLOW}Testing:${NC} Verificar token"
+    "${BASE_URL}/servers/")
+
 http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
 body=$(echo "$response" | sed '/HTTP_CODE:/d')
 
