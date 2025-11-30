@@ -123,7 +123,6 @@ class MetricsSender:
                     continue
                 
                 logger.info(f"Connecting to {self.ws_url}")
-                async with websockets.connect(self.ws_url, ping_interval=None) as ws:  # type: ignore
                 
                 async with websockets.connect(self.ws_url, ping_interval=None) as ws:  # type: ignore
                     logger.info("Connected. Sending metrics...")
