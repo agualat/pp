@@ -26,10 +26,10 @@ docker-compose down
 
 ## Ejecutar Solo el Cliente
 
-### Opción 1: Cliente aislado (mínimo requerido)
+### Cliente independiente (recomendado)
 
 ```bash
-# Cliente + su BD local (sin replicación)
+# Solo cliente + su BD local
 docker-compose up client_db client
 
 # En background
@@ -39,69 +39,63 @@ docker-compose up -d client_db client
 **Estado:**
 - ✅ Cliente funcionando
 - ✅ Base de datos local (client_db) para NSS/PAM
-- ⚠️ Replicación de usuarios fallará (no hay BD central)
-- ⚠️ Envío de métricas fallará (no hay API)
+- ⚠️ Replicación de usuarios fallará (BD central no disponible)
+- ⚠️ Envío de métricas fallará (API no disponible)
+
+**Comportamiento:**
+- Los usuarios YA sincronizados pueden hacer SSH
+- No se sincronizarán usuarios nuevos hasta que el servidor esté online
+- Ideal para clientes en producción (alta disponibilidad)
 
 **Casos de uso:**
-- Testing local del cliente
-- Desarrollo sin necesidad de sincronización
+- Cliente en servidor remoto independiente
+- Alta disponibilidad sin dependencia del servidor central
 
 ---
 
-### Opción 2: Cliente con replicación (recomendado)
+## Ejecutar Servidor Central (Master)
 
 ```bash
-# Cliente + ambas BDs (con replicación)
-docker-compose up db client_db client
+# Servidor completo (BD + API + Worker)
+docker-compose up db api worker
 
 # En background
-docker-compose up -d db client_db client
+docker-compose up -d db api worker
 ```
 
-**Estado:**
-- ✅ Cliente funcionando
-- ✅ Base de datos local (client_db) para NSS/PAM
-- ✅ Base de datos central (db) para replicación
-- ✅ Usuarios se sincronizan cada 2 minutos
-- ⚠️ Envío de métricas fallará (no hay API)
+**Servicios:**
+- ✅ `db` - PostgreSQL central con todos los datos
+- ✅ `api` - Servidor FastAPI (puerto 8000)
+- ✅ `worker` - Celery worker para Ansible
 
-**Casos de uso:**
-- Cliente en producción con alta disponibilidad
-- Testing de replicación de usuarios
+**Comportamiento:**
+- Gestión de usuarios, servidores, playbooks
+- API REST disponible
+- Los clientes pueden replicar usuarios desde aquí
+- Recibe métricas de los clientes
 
 ---
 
-### Opción 3: Cliente con sistema completo
+## Ejecutar Sistema Completo
 
 ```bash
-# Todo el stack
+# Todo (Servidor + Cliente)
 docker-compose up
 
 # En background
 docker-compose up -d
 ```
 
-**Estado:**
-- ✅ Todo funcionando correctamente
-- ✅ Replicación de usuarios
-- ✅ Envío de métricas
-- ✅ API disponible
+**Servicios:**
+- ✅ `db` - PostgreSQL central
+- ✅ `api` - Servidor FastAPI
+- ✅ `worker` - Celery worker
+- ✅ `client_db` - PostgreSQL local del cliente
+- ✅ `client` - Cliente con métricas y NSS/PAM
 
 **Casos de uso:**
-- Producción completa
-- Testing end-to-end
-
----
-
-## Ejecutar Solo el Servidor API
-
-```bash
-# API + Base de datos + Worker
-docker-compose up db api worker
-
-# En background
-docker-compose up -d db api worker
-```
+- Desarrollo local completo
+- Testing de toda la integración
 
 ---
 

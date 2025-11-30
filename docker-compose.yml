@@ -71,7 +71,6 @@ services:
       CENTRAL_DB_USER: ${POSTGRES_USER}
       CENTRAL_DB_PASSWORD: ${POSTGRES_PASSWORD}
     depends_on:
-      - api
       - client_db
     ports:
       - "8100:8100"
