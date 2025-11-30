@@ -1,0 +1,61 @@
+version: "3.9"
+
+# Docker Compose para ejecutar SOLO el cliente
+# Este archivo es para servidores remotos que solo necesitan el cliente
+
+services:
+  client_db:
+    image: postgres:15
+    container_name: pp_client_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5433:5432"  # Exponer en puerto 5433 del host para NSS/PAM
+    volumes:
+      - client_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mydb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  client:
+    build:
+      context: .
+      dockerfile: client/dockerfile
+    container_name: pp_client
+    environment:
+      SERVER_HOST: ${SERVER_HOST}
+      SERVER_PORT: ${SERVER_PORT}
+      METRIC_INTERVAL: ${METRIC_INTERVAL}
+      DB_HOST: client_db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      NSS_DB_USER: ${POSTGRES_USER}
+      NSS_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      CENTRAL_DB_HOST: ${CENTRAL_DB_HOST}
+      CENTRAL_DB_PORT: ${CENTRAL_DB_PORT}
+      CENTRAL_DB_NAME: ${CENTRAL_DB_NAME}
+      CENTRAL_DB_USER: ${CENTRAL_DB_USER}
+      CENTRAL_DB_PASSWORD: ${CENTRAL_DB_PASSWORD}
+      DEV_MODE: ${DEV_MODE:-false}
+    depends_on:
+      client_db:
+        condition: service_healthy
+    ports:
+      - "8100:8100"
+    volumes:
+      - client_data:/app/client_data
+    restart: unless-stopped
+    # En producción, descomentar la siguiente línea para modo privilegiado (NSS/PAM)
+    # privileged: true
+    # volumes:
+    #   - /etc/passwd:/etc/passwd:ro
+    #   - /etc/shadow:/etc/shadow:ro
+
+volumes:
+  client_db_data:
+  client_data:
