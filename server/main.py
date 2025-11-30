@@ -7,6 +7,7 @@ from .router.ansible import router as ansible_router
 from .router.executions import router as executions_router
 from .router.servers import router as servers_router
 from .router.users import router as users_router
+from .router.sync import router as sync_router
 from .models.models import ServerCreate
 from .utils.db import get_db
 
@@ -52,6 +53,7 @@ app.include_router(ansible_router)
 app.include_router(executions_router)
 app.include_router(servers_router)
 app.include_router(users_router)
+app.include_router(sync_router)
 
 # Endpoint público para auto-registro de servidores (sin autenticación)
 from .CRUD.servers import create_server, get_server_by_ip, update_server

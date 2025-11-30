@@ -22,6 +22,7 @@ from ..CRUD.users import (
     deactivate_user,
     toggle_admin,
     delete_user,
+    _trigger_user_sync,
 )
 
 router = APIRouter(prefix="/users", tags=["users"], dependencies=[Depends(get_current_staff_user)])
@@ -252,7 +253,7 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
                         is_admin=0,
                         is_active=1
                     )
-                    new_user = create_user(db, user_data)
+                    new_user = create_user(db, user_data, auto_sync=False)  # No sincronizar individualmente
                     users_created.append({
                         "id": new_user.id,
                         "username": new_user.username,
@@ -302,7 +303,7 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
                         is_admin=0,
                         is_active=1
                     )
-                    new_user = create_user(db, user_data)
+                    new_user = create_user(db, user_data, auto_sync=False)  # No sincronizar individualmente
                     users_created.append({
                         "id": new_user.id,
                         "username": new_user.username,
@@ -319,6 +320,10 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
             detail=f"Error processing file: {str(e)}"
         )
     
+    # Sincronizar todos los usuarios con los clientes una sola vez al final
+    if users_created:
+        _trigger_user_sync(db)
+    
     return {
         "success": True,
         "created": len(users_created),
@@ -326,5 +331,6 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
         "users_created": users_created,
         "users_failed": users_failed,
         "default_password_format": "{username}{year}",
-        "email_domain": "@estud.usfq.edu.ec"
+        "email_domain": "@estud.usfq.edu.ec",
+        "synced_to_clients": True if users_created else False
     }

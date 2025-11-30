@@ -3,10 +3,25 @@ from sqlalchemy import func
 from typing import List, Optional
 from ..models.models import User, UserCreate
 from ..utils.auth import hash_password
+import asyncio
+
+
+def _trigger_user_sync(db: Session):
+    """
+    Dispara la sincronización de usuarios con todos los clientes.
+    Se ejecuta después de cualquier operación que modifique la tabla users.
+    """
+    try:
+        from ..utils.user_sync import sync_users_to_all_clients_sync
+        # Ejecutar sincronización en segundo plano
+        sync_users_to_all_clients_sync(db)
+    except Exception as e:
+        # No fallar la operación principal si la sincronización falla
+        print(f"Warning: User sync failed: {e}")
 
 
 # CREATE
-def create_user(db: Session, user: UserCreate) -> User:
+def create_user(db: Session, user: UserCreate, auto_sync: bool = True) -> User:
     """Crea un nuevo usuario en la base de datos con system_uid auto-asignado"""
     hashed_password = hash_password(user.password)
     
@@ -30,6 +45,11 @@ def create_user(db: Session, user: UserCreate) -> User:
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+    
+    # Sincronizar con todos los clientes si auto_sync=True
+    if auto_sync:
+        _trigger_user_sync(db)
+    
     return db_user
 
 
@@ -82,6 +102,10 @@ def update_user(db: Session, user_id: int, user_data: dict) -> Optional[User]:
     
     db.commit()
     db.refresh(db_user)
+    
+    # Sincronizar con todos los clientes
+    _trigger_user_sync(db)
+    
     return db_user
 
 
@@ -95,6 +119,10 @@ def update_user_password(db: Session, user_id: int, new_password: str) -> Option
     hashed = hash_password(new_password)
     db.query(User).filter(User.id == user_id).update({"password_hash": hashed})
     db.commit()
+    
+    # Sincronizar con todos los clientes
+    _trigger_user_sync(db)
+    
     # Return a fresh instance from the DB
     return get_user_by_id(db, user_id)
 
@@ -107,6 +135,10 @@ def deactivate_user(db: Session, user_id: int) -> Optional[User]:
     
     db.query(User).filter(User.id == user_id).update({"is_active": 0})
     db.commit()
+    
+    # Sincronizar con todos los clientes
+    _trigger_user_sync(db)
+    
     return get_user_by_id(db, user_id)
 
 
@@ -118,6 +150,10 @@ def activate_user(db: Session, user_id: int) -> Optional[User]:
     
     db.query(User).filter(User.id == user_id).update({"is_active": 1})
     db.commit()
+    
+    # Sincronizar con todos los clientes
+    _trigger_user_sync(db)
+    
     return get_user_by_id(db, user_id)
 
 def toggle_admin(db: Session, user_id: int) -> Optional[User]:
@@ -129,6 +165,10 @@ def toggle_admin(db: Session, user_id: int) -> Optional[User]:
     new_value = 0 if getattr(db_user, 'is_admin') == 1 else 1
     db.query(User).filter(User.id == user_id).update({"is_admin": new_value})
     db.commit()
+    
+    # Sincronizar con todos los clientes
+    _trigger_user_sync(db)
+    
     return get_user_by_id(db, user_id)
 
 # DELETE
@@ -140,6 +180,10 @@ def delete_user(db: Session, user_id: int) -> bool:
     
     db.delete(db_user)
     db.commit()
+    
+    # Sincronizar con todos los clientes
+    _trigger_user_sync(db)
+    
     return True
 
 

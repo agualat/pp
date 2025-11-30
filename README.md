@@ -10,7 +10,7 @@ Sistema completo de gestión de infraestructura con monitoreo en tiempo real, ej
 - 👥 **Gestión de Usuarios**: CRUD completo con carga masiva CSV/TXT
 - 🔐 **Autenticación SSH Unificada**: Login con PostgreSQL para todos los servidores
 - 🌐 **Dashboard Web**: Interfaz moderna con Next.js y Tailwind CSS
-- 🔄 **Sincronización Automática**: Usuarios replicados cada 2 minutos
+- 🔄 **Replicación en Tiempo Real**: Cambios de usuarios sincronizados instantáneamente a todos los clientes
 
 ## 🛠️ Stack Tecnológico
 
@@ -87,10 +87,68 @@ maria
 pedro
 ```
 
-Los usuarios creados tendrán:
+**Características:**
+- **Normalización automática**: Los usernames se convierten a minúsculas y se validan automáticamente
+- **Sincronización en tiempo real**: Los cambios se replican inmediatamente a todos los clientes
 - Email: `{username}@estud.usfq.edu.ec`
 - Password: `{username}2025`
 - UID: Auto-incrementado desde 2000
+
+### 🔄 Sistema de Replicación en Tiempo Real
+
+El sistema replica automáticamente **cualquier cambio** en la tabla de usuarios a todos los clientes registrados:
+
+#### Eventos que disparan sincronización:
+- ✅ Creación de usuarios (individual o masiva)
+- ✅ Actualización de usuarios
+- ✅ Cambio de contraseña
+- ✅ Activación/desactivación de usuarios
+- ✅ Cambio de permisos de administrador
+- ✅ Eliminación de usuarios
+
+#### Sincronización Manual (si es necesario):
+
+```bash
+# Endpoint del servidor (requiere autenticación)
+curl -X POST http://localhost:8000/sync/users/manual \
+  -H "Authorization: Bearer {token}"
+```
+
+#### Verificar sincronización:
+
+```bash
+# Ver usuarios en servidor central
+docker compose exec db psql -U postgres -d mydb \
+  -c "SELECT username, system_uid FROM users ORDER BY username;"
+
+# Ver usuarios en cliente
+docker compose exec client_db psql -U postgres -d mydb \
+  -c "SELECT username, system_uid FROM users ORDER BY username;"
+```
+
+#### Arquitectura de Sincronización:
+
+```
+Usuario crea/modifica usuario
+        ↓
+  BD Central actualizada
+        ↓
+_trigger_user_sync() automático
+        ↓
+Lista completa de usuarios
+        ↓
+HTTP POST en paralelo a todos los clientes
+        ↓
+Cliente recibe y actualiza BD local
+        ↓
+Regenera /etc/passwd y /etc/shadow
+```
+
+**Ventajas:**
+- ⚡ **Inmediato**: Cambios visibles en 2-3 segundos
+- 🔄 **Consistente**: Envía lista completa para garantizar sincronización
+- 🚀 **Escalable**: Sincroniza con múltiples clientes en paralelo
+- 💪 **Resiliente**: Fallos no afectan la operación principal
 
 ### Autenticación SSH
 
@@ -105,7 +163,7 @@ ssh juan@servidor.com  # Password: juan2025
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
 │  Frontend   │────▶│  API Server  │────▶│  PostgreSQL │
-│  (Next.js)  │     │   (FastAPI)  │     │   (Users)   │
+│  (Next.js)  │     │   (FastAPI)  │     │   (Central) │
 └─────────────┘     └──────────────┘     └─────────────┘
                            │                     │
                            ▼                     │
@@ -114,10 +172,18 @@ ssh juan@servidor.com  # Password: juan2025
                     │  (Ansible)   │            │
                     └──────────────┘            │
                                                  │
+                                     Sync Real-time (HTTP POST)
+                                                 │
 ┌─────────────┐     ┌──────────────┐            │
-│   Metrics   │────▶│  Client DB   │◀───────────┘
-│   Client    │     │  (Replica)   │   Sync 2min
-└─────────────┘     └──────────────┘
+│   Metrics   │────▶│  Client API  │            │
+│   Client    │     │   (FastAPI)  │            │
+└─────────────┘     └──────────────┘            │
+                           │                     │
+                           ▼                     ▼
+                    ┌──────────────┐     ┌─────────────┐
+                    │  Client DB   │◀────│  Sync POST  │
+                    │  (Replica)   │     │/api/sync/   │
+                    └──────────────┘     └─────────────┘
                            │
                            ▼
                     ┌──────────────┐
@@ -130,20 +196,31 @@ ssh juan@servidor.com  # Password: juan2025
 
 ```bash
 # Ver logs
-docker compose logs -f server
+docker compose logs -f api
 docker compose logs -f frontend
+docker compose logs -f client
 
 # Reiniciar servicios
-docker compose restart server
+docker compose restart api
 
-# Acceder a la base de datos
+# Acceder a la base de datos central
 docker compose exec db psql -U postgres -d mydb
 
-# Ver usuarios
+# Acceder a la base de datos del cliente
+docker compose exec client_db psql -U postgres -d mydb
+
+# Ver usuarios en el servidor central
 docker compose exec db psql -U postgres -d mydb -c "SELECT username, system_uid, is_active FROM users;"
 
-# Forzar sincronización de usuarios
-docker compose exec client python3 /app/client/utils/replicate_db.py
+# Ver usuarios en el cliente
+docker compose exec client_db psql -U postgres -d mydb -c "SELECT username, system_uid, is_active FROM users;"
+
+# Forzar sincronización manual de usuarios
+curl -X POST http://localhost:8000/sync/users/manual \
+  -H "Authorization: Bearer {token}"
+
+# Probar sistema de sincronización completo
+./test_sync.sh
 ```
 
 ## 📚 Documentación Adicional
@@ -151,7 +228,8 @@ docker compose exec client python3 /app/client/utils/replicate_db.py
 - [Server README](server/README.md) - Backend API
 - [Client README](client/README.md) - Cliente de monitoreo
 - [Frontend README](frontend/README.md) - Dashboard web
-- [SETUP_SSH_AUTH.md](SETUP_SSH_AUTH.md) - Configuración SSH
+- [SETUP_SSH_AUTH.md](SETUP_SSH_AUTH.md) - Configuración SSH completa
+- [SYNC_SYSTEM.md](SYNC_SYSTEM.md) - Sistema de replicación en tiempo real (detalles técnicos)
 
 ## 🔒 Seguridad
 
