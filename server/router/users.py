@@ -4,6 +4,7 @@ from typing import List
 from datetime import datetime
 import csv
 import io
+import re
 
 from ..utils.db import get_db
 from .auth import get_current_staff_user
@@ -24,6 +25,36 @@ from ..CRUD.users import (
 )
 
 router = APIRouter(prefix="/users", tags=["users"], dependencies=[Depends(get_current_staff_user)])
+
+
+def normalize_username(username: str) -> str:
+    """
+    Normaliza el username para cumplir con el constraint de PostgreSQL.
+    
+    Reglas:
+    - Convierte a minúsculas
+    - Reemplaza espacios y caracteres inválidos por guiones bajos
+    - Asegura que comience con letra o guion bajo
+    - Solo permite: letras minúsculas, números, guiones y guiones bajos
+    """
+    if not username:
+        return ""
+    
+    # Convertir a minúsculas y eliminar espacios al inicio/final
+    username = username.lower().strip()
+    
+    # Reemplazar espacios y caracteres no permitidos por guiones bajos
+    username = re.sub(r'[^a-z0-9_-]', '_', username)
+    
+    # Asegurar que comience con letra o guion bajo (no con número o guion)
+    if username and not re.match(r'^[a-z_]', username):
+        username = f"_{username}"
+    
+    # Validar que el resultado sea válido
+    if not re.match(r'^[a-z_][a-z0-9_-]*$', username):
+        return ""
+    
+    return username
 
 
 @router.get("/", response_model=List[UserResponse])
@@ -192,6 +223,17 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
                     users_failed.append({"username": username or "unknown", "reason": "Username is required"})
                     continue
                 
+                # Normalizar username para cumplir con el constraint
+                original_username = username
+                username = normalize_username(username)
+                
+                if not username:
+                    users_failed.append({
+                        "username": original_username, 
+                        "reason": "Invalid username format after normalization"
+                    })
+                    continue
+                
                 # Generar email automáticamente
                 email = f"{username}@estud.usfq.edu.ec"
                 
@@ -214,9 +256,11 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
                     users_created.append({
                         "id": new_user.id,
                         "username": new_user.username,
-                        "email": new_user.email
+                        "email": new_user.email,
+                        "original_username": original_username if original_username != username else None
                     })
                 except Exception as e:
+                    db.rollback()  # Rollback en caso de error
                     users_failed.append({"username": username, "reason": str(e)})
         
         else:  # TXT
@@ -229,6 +273,17 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
                 if not username or username.startswith('#'):  # Ignorar líneas vacías y comentarios
                     continue
                 
+                # Normalizar username para cumplir con el constraint
+                original_username = username
+                username = normalize_username(username)
+                
+                if not username:
+                    users_failed.append({
+                        "username": original_username, 
+                        "reason": "Invalid username format after normalization"
+                    })
+                    continue
+                
                 # Generar email automáticamente
                 email = f"{username}@estud.usfq.edu.ec"
                 
@@ -251,9 +306,11 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
                     users_created.append({
                         "id": new_user.id,
                         "username": new_user.username,
-                        "email": new_user.email
+                        "email": new_user.email,
+                        "original_username": original_username if original_username != username else None
                     })
                 except Exception as e:
+                    db.rollback()  # Rollback en caso de error
                     users_failed.append({"username": username, "reason": str(e)})
     
     except Exception as e:

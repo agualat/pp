@@ -178,9 +178,32 @@ PAM_EOF
 
 echo "   ✅ PAM configurado"
 
-# 6. Configurar estructura de extrausers
+# 5. Configurar estructura de extrausers
 echo "📂 [5/8] Configurando extrausers..."
 mkdir -p /var/lib/extrausers
+
+# Verificar si hay usuarios en la base de datos
+USER_COUNT=$(PGPASSWORD="${NSS_DB_PASSWORD}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${NSS_DB_USER}" -d "${DB_NAME}" -t -A -c "SELECT COUNT(*) FROM users WHERE is_active = 1" 2>/dev/null || echo "0")
+
+if [ "$USER_COUNT" -eq 0 ]; then
+  echo "   ⚠️  No se encontraron usuarios en la base de datos"
+  echo "   🔄 Intentando ejecutar replicación..."
+  
+  # Intentar ejecutar el script de replicación si existe
+  if docker compose exec -T client python3 /app/client/utils/replicate_db.py 2>/dev/null; then
+    echo "   ✅ Replicación ejecutada"
+    sleep 2
+  else
+    echo "   ⚠️  No se pudo ejecutar la replicación automáticamente"
+    echo "   💡 Ejecuta manualmente: docker compose exec client python3 /app/client/utils/replicate_db.py"
+    echo ""
+    read -p "   ¿Deseas continuar de todas formas? (y/n): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+      exit 1
+    fi
+  fi
+fi
 
 # Generar archivos iniciales
 bash /usr/local/bin/generate_passwd_from_db.sh
