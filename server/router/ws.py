@@ -6,10 +6,67 @@ from ..models.models import Metric
 from ..CRUD.servers import get_server_by_id, set_server_online, set_server_offline
 from datetime import datetime
 import json
+import asyncio
 
 manager = ConnectionManager()
 
 router = APIRouter()
+
+# WebSocket endpoint para frontend - enviar métricas en tiempo real
+@router.websocket("/ws/metrics/{server_id}")
+async def client_metrics_ws(websocket: WebSocket, server_id: int):
+    """
+    WebSocket para que el frontend reciba métricas en tiempo real de un servidor
+    """
+    from ..utils.db import SessionLocal
+    
+    await websocket.accept()
+    
+    try:
+        while True:
+            # Crear nueva sesión en cada iteración para obtener datos frescos
+            db = SessionLocal()
+            try:
+                # Obtener la última métrica del servidor
+                metric = db.query(Metric)\
+                    .filter(Metric.server_id == server_id)\
+                    .order_by(Metric.id.desc())\
+                    .first()
+                
+                if metric:
+                    # Enviar métrica al frontend
+                    await websocket.send_json({
+                        "cpu_usage": metric.cpu_usage,
+                        "memory_usage": metric.memory_usage,
+                        "disk_usage": metric.disk_usage,
+                        "gpu_usage": metric.gpu_usage,
+                        "timestamp": metric.timestamp
+                    })
+                else:
+                    # Enviar mensaje de que no hay métricas
+                    await websocket.send_json({
+                        "cpu_usage": "N/A",
+                        "memory_usage": "N/A",
+                        "disk_usage": "N/A",
+                        "gpu_usage": "N/A",
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+            finally:
+                db.close()
+            
+            # Esperar 0.5 segundos antes de enviar la siguiente métrica
+            await asyncio.sleep(0.5)
+            
+    except WebSocketDisconnect:
+        print(f"Client disconnected from metrics stream for server {server_id}")
+    except Exception as e:
+        print(f"Error in metrics WebSocket: {e}")
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
+
 
 # WebSocket endpoint para servidores que envían métricas
 @router.websocket("/ws/server/{server_id}")

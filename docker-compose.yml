@@ -59,7 +59,7 @@ services:
       SERVER_HOST: api
       SERVER_PORT: ${PORT}
       SERVER_ID: 1
-      METRIC_INTERVAL: 5
+      METRIC_INTERVAL: 0.5
       DB_HOST: client_db
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}

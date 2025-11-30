@@ -1,24 +1,76 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { serversService, Server, Metric } from '@/lib/services';
+
+interface RealtimeMetric {
+  cpu_usage: string;
+  memory_usage: string;
+  disk_usage: string;
+  gpu_usage: string;
+  timestamp: string;
+}
 
 export default function ServerDetailPage() {
   const params = useParams();
   const router = useRouter();
   const serverId = parseInt(params.id as string);
+  const wsRef = useRef<WebSocket | null>(null);
   
   const [server, setServer] = useState<Server | null>(null);
   const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [realtimeMetric, setRealtimeMetric] = useState<RealtimeMetric | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [wsConnected, setWsConnected] = useState(false);
 
   useEffect(() => {
     if (serverId) {
       loadServerData();
     }
   }, [serverId]);
+
+  useEffect(() => {
+    if (!server) return;
+
+    // Conectar al WebSocket para métricas en tiempo real
+    const wsUrl = `ws://localhost:8000/ws/metrics/${serverId}`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+      setWsConnected(true);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setRealtimeMetric(data);
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      setWsConnected(false);
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      setWsConnected(false);
+    };
+
+    wsRef.current = ws;
+
+    // Cleanup al desmontar
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, [server, serverId]);
 
   const loadServerData = async () => {
     try {
@@ -40,15 +92,11 @@ export default function ServerDetailPage() {
     if (!server) return;
 
     try {
-      if (server.status === 'online') {
-        await serversService.setOffline(server.id);
-      } else {
-        await serversService.setOnline(server.id);
-      }
-      await loadServerData();
+      const updatedServer = await serversService.getById(serverId);
+      setServer(updatedServer);
     } catch (error) {
-      console.error('Error toggling status:', error);
-      setError('Error al cambiar el estado del servidor');
+      console.error('Error refreshing server:', error);
+      setError('Error al refrescar el estado del servidor');
     }
   };
 
@@ -132,7 +180,7 @@ export default function ServerDetailPage() {
           </div>
           <div className="flex space-x-3">
             <button onClick={handleToggleStatus} className="btn btn-secondary">
-              {server.status === 'online' ? 'Marcar Offline' : 'Marcar Online'}
+              Refrescar Estado
             </button>
             <button onClick={handleDelete} className="btn bg-red-600 text-white hover:bg-red-700">
               Eliminar
@@ -182,32 +230,53 @@ export default function ServerDetailPage() {
         </div>
 
         <div className="card">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Última Métrica</h2>
-          {metrics.length > 0 ? (
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">Métricas en Tiempo Real</h2>
+            <div className="flex items-center space-x-2">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  wsConnected ? 'bg-green-500' : 'bg-red-500'
+                }`}
+              ></span>
+              <span className="text-sm text-gray-600">
+                {wsConnected ? 'Conectado' : 'Desconectado'}
+              </span>
+            </div>
+          </div>
+          {realtimeMetric ? (
             <dl className="space-y-3">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <dt className="text-sm font-medium text-gray-600">CPU:</dt>
-                <dd className="text-sm text-gray-900">{metrics[0].cpu_usage}</dd>
+                <dd className="text-sm font-semibold text-gray-900">{realtimeMetric.cpu_usage}</dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <dt className="text-sm font-medium text-gray-600">Memoria:</dt>
-                <dd className="text-sm text-gray-900">{metrics[0].memory_usage}</dd>
+                <dd className="text-sm font-semibold text-gray-900">{realtimeMetric.memory_usage}</dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <dt className="text-sm font-medium text-gray-600">Disco:</dt>
-                <dd className="text-sm text-gray-900">{metrics[0].disk_usage}</dd>
+                <dd className="text-sm font-semibold text-gray-900">{realtimeMetric.disk_usage}</dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <dt className="text-sm font-medium text-gray-600">GPU:</dt>
-                <dd className="text-sm text-gray-900">{metrics[0].gpu_usage}</dd>
+                <dd className="text-sm font-semibold text-gray-900">{realtimeMetric.gpu_usage}</dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-sm font-medium text-gray-600">Timestamp:</dt>
-                <dd className="text-sm text-gray-900">{new Date(metrics[0].timestamp).toLocaleString()}</dd>
+              <div className="flex justify-between items-center">
+                <dt className="text-sm font-medium text-gray-600">Última actualización:</dt>
+                <dd className="text-sm text-gray-900">{new Date(realtimeMetric.timestamp).toLocaleTimeString()}</dd>
               </div>
             </dl>
           ) : (
-            <p className="text-gray-600 text-sm">No hay métricas disponibles</p>
+            <div className="text-center py-8">
+              {wsConnected ? (
+                <>
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mb-2"></div>
+                  <p className="text-gray-600 text-sm">Esperando métricas...</p>
+                </>
+              ) : (
+                <p className="text-gray-600 text-sm">WebSocket desconectado. Refresca la página.</p>
+              )}
+            </div>
           )}
         </div>
       </div>

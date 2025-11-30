@@ -25,17 +25,14 @@ export default function ServersPage() {
     }
   };
 
-  const handleToggleStatus = async (server: Server) => {
+  const handleRefresh = async (serverId: number) => {
     try {
-      if (server.status === 'online') {
-        await serversService.setOffline(server.id);
-      } else {
-        await serversService.setOnline(server.id);
-      }
-      await loadServers();
+      // Recargar solo este servidor para actualizar su estado
+      const updatedServer = await serversService.getById(serverId);
+      setServers(servers.map(s => s.id === serverId ? updatedServer : s));
     } catch (error) {
-      console.error('Error toggling status:', error);
-      setError('Error al cambiar el estado del servidor');
+      console.error('Error refreshing server:', error);
+      setError('Error al refrescar el estado del servidor');
     }
   };
 
@@ -177,14 +174,19 @@ export default function ServersPage() {
                 {servers.map((server) => (
                   <tr key={server.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
+                      <a 
+                        href={`/dashboard/servers/${server.id}`}
+                        className="flex items-center group"
+                      >
                         <div className="w-10 h-10 rounded-lg bg-primary-100 flex items-center justify-center mr-3">
                           <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
                           </svg>
                         </div>
-                        <div className="font-medium text-gray-900">{server.name}</div>
-                      </div>
+                        <div className="font-medium text-gray-900 group-hover:text-primary-600 transition-colors cursor-pointer">
+                          {server.name}
+                        </div>
+                      </a>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {server.ip_address}
@@ -210,24 +212,14 @@ export default function ServersPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
-                        onClick={() => handleToggleStatus(server)}
+                        onClick={() => handleRefresh(server.id)}
                         className="text-primary-600 hover:text-primary-900 mr-4"
-                        title={server.status === 'online' ? 'Marcar como offline' : 'Marcar como online'}
+                        title="Refrescar estado"
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                       </button>
-                      <a
-                        href={`/dashboard/servers/${server.id}`}
-                        className="text-blue-600 hover:text-blue-900 mr-4"
-                        title="Ver detalles"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                      </a>
                       <button
                         onClick={() => handleDelete(server.id)}
                         className="text-red-600 hover:text-red-900"
