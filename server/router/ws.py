@@ -14,11 +14,22 @@ router = APIRouter()
 # WebSocket endpoint para servidores que envían métricas
 @router.websocket("/ws/server/{server_id}")
 async def server_metrics_ws(websocket: WebSocket, server_id: int, db: Session = Depends(get_db)):
-    # Validar que el servidor exista
+    from ..models.models import Server as ServerModel
+    
+    # Obtener o crear el servidor automáticamente
     server = get_server_by_id(db, server_id)
     if not server:
-        await websocket.close(code=4004, reason="Server not found")
-        return
+        # Auto-crear servidor con datos por defecto
+        server = ServerModel(
+            id=server_id,
+            name=f"auto-server-{server_id}",
+            ip_address=f"0.0.0.{server_id}",
+            status="online",
+            ssh_user="root"
+        )
+        db.add(server)
+        db.commit()
+        db.refresh(server)
     
     await manager.connect(str(server_id), websocket)
     set_server_online(db, server_id)
