@@ -85,6 +85,9 @@ class MetricsSender:
                     logger.warning(f"Failed to register server: HTTP {response.status_code} - {response.text}")
                     return False
         except Exception as e:
+            logger.error(f"Error registering server: {e}")
+            return False
+    
     @property
     def ws_url(self) -> str:
         if self.server_ws_url_override:
