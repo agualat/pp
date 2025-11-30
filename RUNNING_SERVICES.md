@@ -26,37 +26,70 @@ docker-compose down
 
 ## Ejecutar Solo el Cliente
 
-### Opción 1: Docker con dependencias mínimas
+### Opción 1: Cliente aislado (mínimo requerido)
 
 ```bash
-# Cliente + Base de datos (necesario para NSS/PAM)
-docker-compose up db client
+# Cliente + su BD local (sin replicación)
+docker-compose up client_db client
 
 # En background
-docker-compose up -d db client
+docker-compose up -d client_db client
 ```
 
-**Nota**: El cliente enviará métricas al servidor API, así que si no está corriendo verás errores de conexión (no críticos).
+**Estado:**
+- ✅ Cliente funcionando
+- ✅ Base de datos local (client_db) para NSS/PAM
+- ⚠️ Replicación de usuarios fallará (no hay BD central)
+- ⚠️ Envío de métricas fallará (no hay API)
 
-### Opción 2: Cliente completo con API
+**Casos de uso:**
+- Testing local del cliente
+- Desarrollo sin necesidad de sincronización
+
+---
+
+### Opción 2: Cliente con replicación (recomendado)
 
 ```bash
-# Cliente + Base de datos + API + Worker
-docker-compose up db api worker client
+# Cliente + ambas BDs (con replicación)
+docker-compose up db client_db client
 
 # En background
-docker-compose up -d db api worker client
+docker-compose up -d db client_db client
 ```
 
-### Opción 3: Solo contenedor del cliente
+**Estado:**
+- ✅ Cliente funcionando
+- ✅ Base de datos local (client_db) para NSS/PAM
+- ✅ Base de datos central (db) para replicación
+- ✅ Usuarios se sincronizan cada 2 minutos
+- ⚠️ Envío de métricas fallará (no hay API)
+
+**Casos de uso:**
+- Cliente en producción con alta disponibilidad
+- Testing de replicación de usuarios
+
+---
+
+### Opción 3: Cliente con sistema completo
 
 ```bash
-# Construir imagen del cliente
-docker-compose build client
+# Todo el stack
+docker-compose up
 
-# Ejecutar solo el cliente (requiere BD externa)
-docker-compose up client
+# En background
+docker-compose up -d
 ```
+
+**Estado:**
+- ✅ Todo funcionando correctamente
+- ✅ Replicación de usuarios
+- ✅ Envío de métricas
+- ✅ API disponible
+
+**Casos de uso:**
+- Producción completa
+- Testing end-to-end
 
 ---
 
