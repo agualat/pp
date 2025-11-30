@@ -93,62 +93,35 @@ echo -e "${GREEN}✓ SUCCESS${NC}"
 echo "$response" | jq '.' 2>/dev/null || echo "$response"
 echo -e "\n${BLUE}----------------------------------------${NC}\n"
 
-# Test 2: Signup (crear usuario administrador de prueba)
-echo -e "${YELLOW}Testing:${NC} Registro de usuario administrador"
-echo -e "${BLUE}POST /auth/signup${NC}"
-SIGNUP_DATA='{
-  "username": "admin_test",
-  "email": "admin@test.com",
-  "password": "Admin123!"
+# Test 2: Login con usuario administrador por defecto
+echo -e "${YELLOW}Testing:${NC} Login con usuario administrador por defecto"
+echo -e "${BLUE}POST /auth/login${NC}"
+echo -e "${CYAN}Usando credenciales: admin / admin123${NC}"
+LOGIN_DATA='{
+  "username": "admin",
+  "password": "admin123"
 }'
 response=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
     -H "Content-Type: application/json" \
-    -d "$SIGNUP_DATA" \
-    "${BASE_URL}/auth/signup")
+    -d "$LOGIN_DATA" \
+    "${BASE_URL}/auth/login")
 
 http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
 body=$(echo "$response" | sed '/HTTP_CODE:/d')
 
-if [ "$http_code" -eq 200 ] || [ "$http_code" -eq 201 ]; then
-    echo -e "${GREEN}✓ Usuario creado${NC} (HTTP $http_code)"
+if [ "$http_code" -eq 200 ]; then
+    echo -e "${GREEN}✓ Login exitoso${NC}"
     TOKEN=$(echo "$body" | jq -r '.access_token')
     echo -e "Token obtenido: ${TOKEN:0:50}..."
-elif [ "$http_code" -eq 400 ]; then
-    echo -e "${YELLOW}⚠ Usuario ya existe, intentando login...${NC}"
 else
-    echo -e "${RED}✗ Error en signup${NC} (HTTP $http_code)"
+    echo -e "${RED}✗ Login falló${NC} (HTTP $http_code)"
     echo "$body" | jq '.' 2>/dev/null || echo "$body"
+    echo -e "\n${YELLOW}Nota: Asegúrate de que el usuario admin por defecto esté creado${NC}"
+    echo -e "Credenciales por defecto: admin / admin123"
+    echo -e "Si cambiaste las credenciales en .env, actualiza este script"
+    exit 1
 fi
 echo -e "\n${BLUE}----------------------------------------${NC}\n"
-
-# Test 3: Login (si signup falló)
-if [ -z "$TOKEN" ]; then
-    echo -e "${YELLOW}Testing:${NC} Login de usuario administrador"
-    echo -e "${BLUE}POST /auth/login${NC}"
-    LOGIN_DATA='{
-      "username": "admin_test",
-      "password": "Admin123!"
-    }'
-    response=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
-        -H "Content-Type: application/json" \
-        -d "$LOGIN_DATA" \
-        "${BASE_URL}/auth/login")
-    
-    http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
-    body=$(echo "$response" | sed '/HTTP_CODE:/d')
-    
-    if [ "$http_code" -eq 200 ]; then
-        echo -e "${GREEN}✓ Login exitoso${NC}"
-        TOKEN=$(echo "$body" | jq -r '.access_token')
-        echo -e "Token obtenido: ${TOKEN:0:50}..."
-    else
-        echo -e "${RED}✗ Login falló${NC} (HTTP $http_code)"
-        echo "$body" | jq '.' 2>/dev/null || echo "$body"
-        echo -e "\n${RED}No se puede continuar sin autenticación${NC}"
-        exit 1
-    fi
-    echo -e "\n${BLUE}----------------------------------------${NC}\n"
-fi
 
 # Test 4: Verificar token
 echo -e "${YELLOW}Testing:${NC} Verificar token"
@@ -164,7 +137,7 @@ echo -e "${CYAN}================================================${NC}"
 echo -e "${CYAN}  FASE 2: Gestión de Servidores${NC}"
 echo -e "${CYAN}================================================${NC}\n"
 
-# Test 5: Crear servidor
+# Test 4: Crear servidor
 echo -e "${YELLOW}Testing:${NC} Crear servidor"
 echo -e "${BLUE}POST /servers/${NC}"
 SERVER_DATA='{
@@ -177,8 +150,8 @@ response=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "$SERVER_DATA" \
-    "${BASE_URL}/servers/")
-
+# Test 3: Verificar token
+echo -e "${YELLOW}Testing:${NC} Verificar token"
 http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
 body=$(echo "$response" | sed '/HTTP_CODE:/d')
 
@@ -199,7 +172,7 @@ else
 fi
 echo -e "\n${BLUE}----------------------------------------${NC}\n"
 
-# Test 6: Listar todos los servidores
+# Test 5: Listar todos los servidores
 echo -e "${YELLOW}Testing:${NC} Listar todos los servidores"
 echo -e "${BLUE}GET /servers/${NC}"
 response=$(curl -s -H "Authorization: Bearer $TOKEN" "${BASE_URL}/servers/")
@@ -207,7 +180,7 @@ echo -e "${GREEN}✓ SUCCESS${NC}"
 echo "$response" | jq '.' 2>/dev/null || echo "$response"
 echo -e "\n${BLUE}----------------------------------------${NC}\n"
 
-# Test 7: Obtener servidor por ID
+# Test 6: Obtener servidor por ID
 if [ ! -z "$SERVER_ID" ]; then
     echo -e "${YELLOW}Testing:${NC} Obtener servidor por ID"
     echo -e "${BLUE}GET /servers/${SERVER_ID}${NC}"
@@ -217,7 +190,7 @@ if [ ! -z "$SERVER_ID" ]; then
     echo -e "\n${BLUE}----------------------------------------${NC}\n"
 fi
 
-# Test 8: Actualizar estado del servidor
+# Test 7: Actualizar estado del servidor
 if [ ! -z "$SERVER_ID" ]; then
     echo -e "${YELLOW}Testing:${NC} Actualizar servidor a online"
     echo -e "${BLUE}PUT /servers/${SERVER_ID}/online${NC}"
@@ -227,7 +200,7 @@ if [ ! -z "$SERVER_ID" ]; then
     echo -e "\n${BLUE}----------------------------------------${NC}\n"
 fi
 
-# Test 9: Contar servidores
+# Test 8: Contar servidores
 echo -e "${YELLOW}Testing:${NC} Contar total de servidores"
 echo -e "${BLUE}GET /servers/count/total${NC}"
 response=$(curl -s -H "Authorization: Bearer $TOKEN" "${BASE_URL}/servers/count/total")
@@ -235,7 +208,7 @@ echo -e "${GREEN}✓ SUCCESS${NC}"
 echo "$response" | jq '.' 2>/dev/null || echo "$response"
 echo -e "\n${BLUE}----------------------------------------${NC}\n"
 
-# Test 10: Obtener métricas del servidor
+# Test 9: Obtener métricas del servidor
 if [ ! -z "$SERVER_ID" ]; then
     echo -e "${YELLOW}Testing:${NC} Obtener métricas del servidor"
     echo -e "${BLUE}GET /servers/${SERVER_ID}/metrics${NC}"
@@ -249,7 +222,7 @@ echo -e "${CYAN}================================================${NC}"
 echo -e "${CYAN}  FASE 3: Gestión de Playbooks Ansible${NC}"
 echo -e "${CYAN}================================================${NC}\n"
 
-# Test 11: Crear playbook
+# Test 10: Crear playbook
 echo -e "${YELLOW}Testing:${NC} Crear playbook Ansible"
 echo -e "${BLUE}POST /ansible/playbooks${NC}"
 PLAYBOOK_DATA='{
@@ -283,7 +256,7 @@ else
 fi
 echo -e "\n${BLUE}----------------------------------------${NC}\n"
 
-# Test 12: Listar playbooks
+# Test 11: Listar playbooks
 echo -e "${YELLOW}Testing:${NC} Listar todos los playbooks"
 echo -e "${BLUE}GET /ansible/playbooks${NC}"
 response=$(curl -s -H "Authorization: Bearer $TOKEN" "${BASE_URL}/ansible/playbooks")
@@ -291,7 +264,7 @@ echo -e "${GREEN}✓ SUCCESS${NC}"
 echo "$response" | jq '.' 2>/dev/null || echo "$response"
 echo -e "\n${BLUE}----------------------------------------${NC}\n"
 
-# Test 13: Obtener playbook por ID
+# Test 12: Obtener playbook por ID
 if [ ! -z "$PLAYBOOK_ID" ]; then
     echo -e "${YELLOW}Testing:${NC} Obtener playbook por ID"
     echo -e "${BLUE}GET /ansible/playbooks/${PLAYBOOK_ID}${NC}"
@@ -301,7 +274,7 @@ if [ ! -z "$PLAYBOOK_ID" ]; then
     echo -e "\n${BLUE}----------------------------------------${NC}\n"
 fi
 
-# Test 14: Contar playbooks
+# Test 13: Contar playbooks
 echo -e "${YELLOW}Testing:${NC} Contar total de playbooks"
 echo -e "${BLUE}GET /ansible/playbooks/count${NC}"
 response=$(curl -s -H "Authorization: Bearer $TOKEN" "${BASE_URL}/ansible/playbooks/count")
@@ -309,7 +282,7 @@ echo -e "${GREEN}✓ SUCCESS${NC}"
 echo "$response" | jq '.' 2>/dev/null || echo "$response"
 echo -e "\n${BLUE}----------------------------------------${NC}\n"
 
-# Test 15: Ejecutar playbook
+# Test 14: Ejecutar playbook
 if [ ! -z "$PLAYBOOK_ID" ] && [ ! -z "$SERVER_ID" ]; then
     echo -e "${YELLOW}Testing:${NC} Ejecutar playbook en servidor"
     echo -e "${BLUE}POST /ansible/playbooks/${PLAYBOOK_ID}/run${NC}"
@@ -339,7 +312,7 @@ echo -e "${CYAN}================================================${NC}"
 echo -e "${CYAN}  FASE 4: Historial de Ejecuciones${NC}"
 echo -e "${CYAN}================================================${NC}\n"
 
-# Test 16: Listar todas las ejecuciones
+# Test 15: Listar todas las ejecuciones
 echo -e "${YELLOW}Testing:${NC} Listar todas las ejecuciones"
 echo -e "${BLUE}GET /executions/${NC}"
 response=$(curl -s -H "Authorization: Bearer $TOKEN" "${BASE_URL}/executions/")
@@ -347,7 +320,7 @@ echo -e "${GREEN}✓ SUCCESS${NC}"
 echo "$response" | jq '.' 2>/dev/null || echo "$response"
 echo -e "\n${BLUE}----------------------------------------${NC}\n"
 
-# Test 17: Obtener ejecución por ID
+# Test 16: Obtener ejecución por ID
 if [ ! -z "$EXECUTION_ID" ]; then
     echo -e "${YELLOW}Testing:${NC} Obtener ejecución por ID"
     echo -e "${BLUE}GET /executions/${EXECUTION_ID}${NC}"
@@ -357,7 +330,7 @@ if [ ! -z "$EXECUTION_ID" ]; then
     echo -e "\n${BLUE}----------------------------------------${NC}\n"
 fi
 
-# Test 18: Contar ejecuciones totales
+# Test 17: Contar ejecuciones totales
 echo -e "${YELLOW}Testing:${NC} Contar ejecuciones totales"
 echo -e "${BLUE}GET /executions/count/total${NC}"
 response=$(curl -s -H "Authorization: Bearer $TOKEN" "${BASE_URL}/executions/count/total")
@@ -365,7 +338,7 @@ echo -e "${GREEN}✓ SUCCESS${NC}"
 echo "$response" | jq '.' 2>/dev/null || echo "$response"
 echo -e "\n${BLUE}----------------------------------------${NC}\n"
 
-# Test 19: Ejecuciones por estado
+# Test 18: Ejecuciones por estado
 echo -e "${YELLOW}Testing:${NC} Obtener ejecuciones por estado"
 echo -e "${BLUE}GET /executions/by-state/success${NC}"
 response=$(curl -s -H "Authorization: Bearer $TOKEN" "${BASE_URL}/executions/by-state/success")
@@ -377,7 +350,7 @@ echo -e "${CYAN}================================================${NC}"
 echo -e "${CYAN}  FASE 5: Documentación y Schema${NC}"
 echo -e "${CYAN}================================================${NC}\n"
 
-# Test 20: Documentación Swagger
+# Test 19: Documentación Swagger
 echo -e "${YELLOW}Testing:${NC} Verificar acceso a documentación Swagger"
 echo -e "${BLUE}GET /docs${NC}"
 http_code=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/docs")
@@ -389,7 +362,7 @@ else
 fi
 echo -e "\n${BLUE}----------------------------------------${NC}\n"
 
-# Test 21: OpenAPI Schema
+# Test 20: OpenAPI Schema
 echo -e "${YELLOW}Testing:${NC} Verificar esquema OpenAPI"
 echo -e "${BLUE}GET /openapi.json${NC}"
 http_code=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/openapi.json")
@@ -409,8 +382,7 @@ echo -e "${GREEN}Tests completados${NC}\n"
 
 echo -e "${CYAN}Endpoints testeados:${NC}"
 echo -e "\n${YELLOW}Autenticación:${NC}"
-echo -e "  • POST /auth/signup              - Registro de usuario"
-echo -e "  • POST /auth/login               - Login de usuario"
+echo -e "  • POST /auth/login               - Login con admin por defecto (admin/admin123)"
 echo -e "  • GET  /auth/verify              - Verificar token"
 
 echo -e "\n${YELLOW}Servidores:${NC}"
