@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+	PYTHONUNBUFFERED=1 \
+	PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# System deps (psutil) + NSS/PAM packages
+RUN apt-get update -y \
+	 && apt-get install -y --no-install-recommends \
+		 build-essential \
+		 libnss-pgsql \
+		 libpam-pgsql \
+		 gettext-base \
+	 && rm -rf /var/lib/apt/lists/*
+
+# Install requirements
+COPY client/requirements.txt client/requirements.txt
+RUN pip install --no-cache-dir -r client/requirements.txt
+
+# Copy app code
+COPY client /app/client
+RUN chmod +x /app/client/utils/setup_nss_pam.sh || true
+
+# Client entrypoint runs NSS/PAM setup (if env provided) and starts uvicorn
+COPY server/requirements.txt /app/server_requirements.txt
+COPY server/entrypoint.sh /app/server_entrypoint.sh
+RUN rm -f /app/server_requirements.txt /app/server_entrypoint.sh
+
+COPY client/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+EXPOSE 8100
+
+ENV SERVER_HOST=api \
+	SERVER_PORT=8000 \
+	SERVER_ID=1 \
+	METRIC_INTERVAL=5
+
+# NSS/PAM DB envs (optional; provide via compose to enable setup)
+ENV DB_HOST= \
+	DB_PORT= \
+	DB_NAME= \
+	NSS_DB_USER= \
+	NSS_DB_PASSWORD=
+
+ENTRYPOINT ["/app/entrypoint.sh"]

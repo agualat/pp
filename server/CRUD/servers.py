@@ -1,19 +1,38 @@
 from sqlalchemy.orm import Session
 from ..models.models import Server, ServerCreate
 from typing import List, Optional
+from ..utils.ssh import generate_ssh_keypair, deploy_ssh_key
 
 
 # CREATE
 def create_server(db: Session, server: ServerCreate) -> Server:
-    """Crea un nuevo servidor en la base de datos"""
+    """Crea un nuevo servidor en la base de datos y genera SSH keys"""
+    # Generate SSH key pair
+    private_key_path, public_key = generate_ssh_keypair(server.name)
+    
+    # Create server in database
     db_server = Server(
         name=server.name,
         ip_address=server.ip_address,
-        status="offline"
+        status="offline",
+        ssh_user=server.ssh_user,
+        ssh_private_key_path=private_key_path
     )
     db.add(db_server)
     db.commit()
     db.refresh(db_server)
+    
+    # Deploy SSH key to remote server
+    deploy_success = deploy_ssh_key(
+        host=server.ip_address,
+        username=server.ssh_user,
+        password=server.ssh_password,
+        public_key=public_key
+    )
+    
+    if not deploy_success:
+        print(f"Warning: Could not deploy SSH key to {server.ip_address}")
+    
     return db_server
 
 
@@ -154,12 +173,25 @@ def create_multiple_servers(db: Session, servers: List[ServerCreate]) -> List[Se
     """Crea múltiples servidores en una sola operación"""
     db_servers = []
     for server in servers:
+        # Generate SSH key pair for each server
+        private_key_path, public_key = generate_ssh_keypair(server.name)
+        
         db_server = Server(
             name=server.name,
             ip_address=server.ip_address,
-            status="offline"
+            status="offline",
+            ssh_user=server.ssh_user,
+            ssh_private_key_path=private_key_path
         )
         db_servers.append(db_server)
+        
+        # Deploy SSH key
+        deploy_ssh_key(
+            host=server.ip_address,
+            username=server.ssh_user,
+            password=server.ssh_password,
+            public_key=public_key
+        )
     
     db.add_all(db_servers)
     db.commit()

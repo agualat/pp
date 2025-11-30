@@ -1,14 +1,21 @@
 from pydantic import BaseModel
 from ..utils.db import Base
-from sqlalchemy import Integer, String, DateTime, ForeignKey
+from sqlalchemy import Integer, String, DateTime, ForeignKey, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.sql import func
 from enum import Enum
 from datetime import datetime
+from typing import Optional
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint(
+            "username ~ '^[a-z_][a-z0-9_-]*$'",
+            name="username_valid_pattern",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     username: Mapped[str] = mapped_column(String, unique=True, index=True)
@@ -16,6 +23,9 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String)
     is_admin: Mapped[int] = mapped_column(Integer, default=0)  # 0 = False, 1 = True
     is_active: Mapped[int] = mapped_column(Integer, default=1)  # 0 = False, 1 = True
+    system_uid: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    system_gid: Mapped[int] = mapped_column(Integer, default=2000)
+    ssh_public_key: Mapped[str | None] = mapped_column(String, nullable=True)
 
 class UserCreate(BaseModel):
     username: str
@@ -23,10 +33,13 @@ class UserCreate(BaseModel):
     password: str
     is_admin: int = 0
     is_active: int = 1
+    ssh_public_key: str | None = None
 
 class ServerCreate(BaseModel):
     name: str
     ip_address: str
+    ssh_user: str = "root"
+    ssh_password: str  # Password para configurar SSH key
 
 class Server(Base):
     __tablename__ = "servers"
@@ -35,6 +48,8 @@ class Server(Base):
     name: Mapped[str] = mapped_column(String, unique=True, index=True)
     ip_address: Mapped[str] = mapped_column(String, unique=True, index=True)
     status: Mapped[str] = mapped_column(String, default="offline")
+    ssh_user: Mapped[str] = mapped_column(String, default="root")
+    ssh_private_key_path: Mapped[str | None] = mapped_column(String, nullable=True)
 
 class Metric(Base):
     __tablename__ = "metrics"
@@ -91,3 +106,25 @@ class ExecutedPlaybookCreate(BaseModel):
     user_id: int
     servers: list[int]
     state: ExecutionState
+
+
+class SignupRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class VerifyTokenResponse(BaseModel):
+    valid: bool
+    user_id: Optional[int] = None
+    username: Optional[str] = None

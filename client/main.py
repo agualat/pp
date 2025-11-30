@@ -1,9 +1,21 @@
 from fastapi import FastAPI, WebSocket
 import asyncio
+from contextlib import asynccontextmanager
 from client.utils.metrics import get_system_info
+from client.utils.metrics_sender import start_sender, stop_sender
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup phase
+    start_sender()
+    try:
+        yield
+    finally:
+        # Shutdown phase
+        await stop_sender()
+
+app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 def read_root():

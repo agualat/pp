@@ -1,26 +1,69 @@
-from fastapi import WebSocket, WebSocketDisconnect, APIRouter
+from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends
+from sqlalchemy.orm import Session
 from ..utils.socket import ConnectionManager
-from typing import Dict
+from ..utils.db import get_db
+from ..models.models import Metric
+from ..CRUD.servers import get_server_by_id, set_server_online, set_server_offline
+from datetime import datetime
+import json
 
 manager = ConnectionManager()
-clients_metrics: Dict[str, dict] = {}
 
 router = APIRouter()
 
-# WS endpoint para clientes que envían métricas
-@router.websocket("/ws/client/{client_id}")
-async def client_ws(websocket: WebSocket, client_id: str):
-    await manager.connect(client_id, websocket)
+# WebSocket endpoint para servidores que envían métricas
+@router.websocket("/ws/server/{server_id}")
+async def server_metrics_ws(websocket: WebSocket, server_id: int, db: Session = Depends(get_db)):
+    # Validar que el servidor exista
+    server = get_server_by_id(db, server_id)
+    if not server:
+        await websocket.close(code=4004, reason="Server not found")
+        return
+    
+    await manager.connect(str(server_id), websocket)
+    set_server_online(db, server_id)
+    
     try:
         while True:
-            data = await websocket.receive_json()
-            clients_metrics[client_id] = data
-            # Opcional: reenviar a todos los demás
-            # await manager.broadcast({client_id: data})
-    except WebSocketDisconnect:
-        manager.disconnect(client_id)
+            # Be tolerant: accept text or JSON frames
+            msg = await websocket.receive_text()
+            try:
+                data = json.loads(msg)
+            except Exception:
+                # If it's already a dict (receive_json used by client), fallback
+                try:
+                    data = await websocket.receive_json()
+                except Exception:
+                    # Unable to parse; skip
+                    continue
 
-# Endpoint REST para obtener métricas de todos los clientes
-@router.get("/metrics")
-async def get_metrics():
-    return clients_metrics
+            # Normalize fields: accept both dicts and JSON strings
+            def ensure_string(value, default="N/A"):
+                if value is None:
+                    return default
+                if isinstance(value, str):
+                    return value
+                try:
+                    return json.dumps(value)
+                except Exception:
+                    return str(value)
+
+            cpu_val = ensure_string(data.get("cpu_usage"), "0")
+            mem_val = ensure_string(data.get("memory_usage"), "0")
+            disk_val = ensure_string(data.get("disk_usage"), "0")
+            gpu_val = ensure_string(data.get("gpu_usage"), "N/A")
+            ts_val = data.get("timestamp") or datetime.utcnow().isoformat()
+
+            metric = Metric(
+                server_id=server_id,
+                cpu_usage=cpu_val,
+                memory_usage=mem_val,
+                disk_usage=disk_val,
+                gpu_usage=gpu_val,
+                timestamp=ts_val,
+            )
+            db.add(metric)
+            db.commit()
+    except WebSocketDisconnect:
+        manager.disconnect(str(server_id))
+        set_server_offline(db, server_id)

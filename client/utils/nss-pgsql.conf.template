@@ -1,0 +1,69 @@
+# /etc/nss-pgsql.conf
+# Configuration file for libnss-pgsql
+# This allows Ubuntu to authenticate users directly from PostgreSQL
+
+# Database connection settings (values loaded from environment variables)
+connectionstring = host=${DB_HOST} port=${DB_PORT} dbname=${DB_NAME} user=${NSS_DB_USER} password=${NSS_DB_PASSWORD}
+
+# Query to get user information by username
+# Returns: username, password_hash, uid, gid, gecos, homedir, shell
+getpwnam = \
+    SELECT username, password_hash, system_uid, system_gid, \
+           username AS gecos, '/home/' || username AS homedir, \
+           '/bin/bash' AS shell \
+    FROM users \
+    WHERE username = $1 AND is_active = 1
+
+# Query to get user information by UID
+getpwuid = \
+    SELECT username, password_hash, system_uid, system_gid, \
+           username AS gecos, '/home/' || username AS homedir, \
+           '/bin/bash' AS shell \
+    FROM users \
+    WHERE system_uid = $1 AND is_active = 1
+
+# Query to list all users
+allusers = \
+    SELECT username, password_hash, system_uid, system_gid, \
+           username AS gecos, '/home/' || username AS homedir, \
+           '/bin/bash' AS shell \
+    FROM users \
+    WHERE is_active = 1
+
+# Query to get group information by name
+getgrnam = \
+    SELECT 'users' AS groupname, 2000 AS gid, \
+           ARRAY_TO_STRING(ARRAY_AGG(username), ',') AS members \
+    FROM users \
+    WHERE is_active = 1 AND system_gid = 2000
+
+# Query to get group information by GID
+getgrgid = \
+    SELECT 'users' AS groupname, 2000 AS gid, \
+           ARRAY_TO_STRING(ARRAY_AGG(username), ',') AS members \
+    FROM users \
+    WHERE is_active = 1 AND system_gid = $1
+
+# Query to list all groups
+allgroups = \
+    SELECT DISTINCT 'users' AS groupname, system_gid AS gid \
+    FROM users \
+    WHERE is_active = 1
+
+# Query to get groups for a specific user
+groups_dyn = \
+    SELECT system_gid \
+    FROM users \
+    WHERE username = $1 AND is_active = 1
+
+# Shadow (password) queries
+getspnam = \
+    SELECT username, password_hash, \
+           18000 AS lastchange, 0 AS min, 99999 AS max, \
+           7 AS warn, -1 AS inactive, -1 AS expire \
+    FROM users \
+    WHERE username = $1 AND is_active = 1
+
+# Additional settings
+# Use MD5 or bcrypt hashes (your password_hash format)
+# shadowmatch = encrypted

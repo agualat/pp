@@ -1,0 +1,24 @@
+# /etc/pam-pgsql.conf
+# Configuration for libpam-pgsql
+# Enables password authentication against PostgreSQL database
+
+# Database connection (values loaded from environment variables)
+database = ${DB_NAME}
+host = ${DB_HOST}
+port = ${DB_PORT}
+user = ${NSS_DB_USER}
+password = ${NSS_DB_PASSWORD}
+
+# Table and column configuration
+table = users
+usercolumn = username
+pwdcolumn = password_hash
+pwdtype = bcrypt
+
+# Additional query to check if user is active
+# This ensures only active users can authenticate
+query_auth = SELECT password_hash FROM users WHERE username = '%u' AND is_active = 1
+
+# Optional: log authentication attempts
+# syslog = auth
+# debug = 1

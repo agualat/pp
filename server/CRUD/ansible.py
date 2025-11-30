@@ -33,29 +33,7 @@ def get_all_tasks(db: Session, skip: int = 0, limit: int = 100) -> List[AnsibleT
     return db.query(AnsibleTask).offset(skip).limit(limit).all()
 
 
-def get_tasks_by_status(db: Session, status: str) -> List[AnsibleTask]:
-    """Obtiene todas las tareas por estado"""
-    return db.query(AnsibleTask).filter(AnsibleTask.status == status).all()
-
-
-def get_pending_tasks(db: Session) -> List[AnsibleTask]:
-    """Obtiene todas las tareas pendientes"""
-    return get_tasks_by_status(db, "pending")
-
-
-def get_running_tasks(db: Session) -> List[AnsibleTask]:
-    """Obtiene todas las tareas en ejecución"""
-    return get_tasks_by_status(db, "running")
-
-
-def get_completed_tasks(db: Session) -> List[AnsibleTask]:
-    """Obtiene todas las tareas completadas"""
-    return get_tasks_by_status(db, "completed")
-
-
-def get_failed_tasks(db: Session) -> List[AnsibleTask]:
-    """Obtiene todas las tareas fallidas"""
-    return get_tasks_by_status(db, "failed")
+# (Funciones relacionadas con 'status' removidas; el estado de ejecución vive en ExecutedPlaybook)
 
 
 def get_tasks_by_playbook(db: Session, playbook: str) -> List[AnsibleTask]:
@@ -73,6 +51,30 @@ def count_tasks(db: Session) -> int:
     return db.query(AnsibleTask).count()
 
 
+# UPDATE
+def update_task(db: Session, task_id: int, task_data: dict) -> Optional[AnsibleTask]:
+    """Actualiza datos arbitrarios del playbook (name, playbook, inventory)."""
+    db_task = get_task_by_id(db, task_id)
+    if not db_task:
+        return None
+    
+    # Validar unicidad de nombre si se está actualizando
+    if "name" in task_data:
+        existing = db.query(AnsibleTask).filter(
+            AnsibleTask.name == task_data["name"],
+            AnsibleTask.id != task_id
+        ).first()
+        if existing:
+            return None
+    
+    for key, value in task_data.items():
+        if hasattr(db_task, key):
+            setattr(db_task, key, value)
+    db.commit()
+    db.refresh(db_task)
+    return db_task
+
+
 def update_task_playbook(db: Session, task_id: int, new_playbook: str) -> Optional[AnsibleTask]:
     """Actualiza el playbook de una tarea"""
     db_task = get_task_by_id(db, task_id)
@@ -80,6 +82,36 @@ def update_task_playbook(db: Session, task_id: int, new_playbook: str) -> Option
         return None
     
     setattr(db_task, 'playbook', new_playbook)
+    db.commit()
+    db.refresh(db_task)
+    return db_task
+
+
+def update_task_inventory(db: Session, task_id: int, new_inventory: str) -> Optional[AnsibleTask]:
+    """Actualiza el inventory de una tarea"""
+    db_task = get_task_by_id(db, task_id)
+    if not db_task:
+        return None
+    setattr(db_task, 'inventory', new_inventory)
+    db.commit()
+    db.refresh(db_task)
+    return db_task
+
+
+def update_task_name(db: Session, task_id: int, new_name: str) -> Optional[AnsibleTask]:
+    """Actualiza el nombre de una tarea"""
+    # Validar que el nombre no exista en otro playbook
+    existing = db.query(AnsibleTask).filter(
+        AnsibleTask.name == new_name,
+        AnsibleTask.id != task_id
+    ).first()
+    if existing:
+        return None
+    
+    db_task = get_task_by_id(db, task_id)
+    if not db_task:
+        return None
+    setattr(db_task, 'name', new_name)
     db.commit()
     db.refresh(db_task)
     return db_task
@@ -117,7 +149,6 @@ def create_multiple_tasks(db: Session, tasks: List[AnsibleTaskCreate]) -> List[A
             name=task.name,
             playbook=task.playbook,
             inventory=task.inventory,
-            status="pending"
         )
         db_tasks.append(db_task)
     

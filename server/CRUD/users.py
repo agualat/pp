@@ -1,32 +1,28 @@
 from sqlalchemy.orm import Session
-from ..models.models import User, UserCreate
-from passlib.context import CryptContext
+from sqlalchemy import func
 from typing import List, Optional
-
-# Configuración para el hashing de contraseñas
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-def hash_password(password: str) -> str:
-    """Hashea una contraseña"""
-    return pwd_context.hash(password)
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifica una contraseña contra su hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+from ..models.models import User, UserCreate
+from ..utils.auth import hash_password
 
 
 # CREATE
 def create_user(db: Session, user: UserCreate) -> User:
-    """Crea un nuevo usuario en la base de datos"""
+    """Crea un nuevo usuario en la base de datos con system_uid auto-asignado"""
     hashed_password = hash_password(user.password)
+    
+    # Get the next available system_uid (starting from 2000)
+    max_uid = db.query(func.max(User.system_uid)).scalar()
+    next_uid = max_uid + 1 if max_uid and max_uid >= 2000 else 2000
+    
     db_user = User(
         username=user.username,
         email=user.email,
         password_hash=hashed_password,
         is_admin=user.is_admin,
-        is_active=user.is_active
+        is_active=user.is_active,
+        system_uid=next_uid,
+        system_gid=2000,  # Default group for all users
+        ssh_public_key=user.ssh_public_key
     )
     db.add(db_user)
     db.commit()
@@ -145,13 +141,4 @@ def delete_user(db: Session, user_id: int) -> bool:
 
 
 # AUTHENTICATION
-def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
-    """Autentica un usuario verificando sus credenciales"""
-    user = get_user_by_username(db, username)
-    if not user:
-        return None
-    if not verify_password(password, str(user.password_hash)):
-        return None
-    if getattr(user, 'is_active') == 0:
-        return None
-    return user
+# Autenticación movida a utils/auth.py (authenticate_user devuelve JWT)
