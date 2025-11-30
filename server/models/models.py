@@ -75,6 +75,15 @@ class AnsibleTaskCreate(BaseModel):
     playbook: str
     inventory: str
 
+class AnsibleTaskResponse(BaseModel):
+    id: int
+    name: str
+    playbook: str
+    inventory: str
+
+    class Config:
+        from_attributes = True
+
 class AnsibleTask(Base):
     __tablename__ = "ansible_tasks"
 
@@ -106,6 +115,17 @@ class ExecutedPlaybookCreate(BaseModel):
     user_id: int
     servers: list[int]
     state: ExecutionState
+
+class ExecutedPlaybookResponse(BaseModel):
+    id: int
+    playbook_id: int
+    user_id: int
+    servers: list[int]
+    executed_at: datetime
+    state: str
+
+    class Config:
+        from_attributes = True
 
 
 class SignupRequest(BaseModel):

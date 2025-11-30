@@ -4,7 +4,7 @@ from typing import List
 
 from ..utils.db import get_db
 from .auth import get_current_staff_user
-from ..models.models import AnsibleTask, AnsibleTaskCreate, ExecutedPlaybook, ExecutedPlaybookCreate, ExecutionState, User
+from ..models.models import AnsibleTask, AnsibleTaskCreate, AnsibleTaskResponse, ExecutedPlaybook, ExecutedPlaybookCreate, ExecutedPlaybookResponse, ExecutionState, User
 from ..CRUD.servers import get_server_by_id
 from ..CRUD.ansible import (
     create_ansible_task,
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/ansible", tags=["ansible"], dependencies=[Depends(ge
 
 # --------- Playbooks CRUD ---------
 
-@router.post("/playbooks", response_model=AnsibleTask)
+@router.post("/playbooks", response_model=AnsibleTaskResponse)
 def create_playbook(payload: AnsibleTaskCreate, db: Session = Depends(get_db)):
     # validar duplicados por nombre
     existing = get_task_by_name(db, payload.name)
@@ -37,7 +37,7 @@ def create_playbook(payload: AnsibleTaskCreate, db: Session = Depends(get_db)):
     return create_ansible_task(db, payload)
 
 
-@router.get("/playbooks/{task_id}", response_model=AnsibleTask)
+@router.get("/playbooks/{task_id}", response_model=AnsibleTaskResponse)
 def read_playbook(task_id: int, db: Session = Depends(get_db)):
     task = get_task_by_id(db, task_id)
     if not task:
@@ -45,22 +45,22 @@ def read_playbook(task_id: int, db: Session = Depends(get_db)):
     return task
 
 
-@router.get("/playbooks", response_model=List[AnsibleTask])
+@router.get("/playbooks", response_model=List[AnsibleTaskResponse])
 def list_playbooks(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return get_all_tasks(db, skip=skip, limit=limit)
 
 
-@router.get("/playbooks/by-playbook", response_model=List[AnsibleTask])
+@router.get("/playbooks/by-playbook", response_model=List[AnsibleTaskResponse])
 def list_by_playbook(playbook: str, db: Session = Depends(get_db)):
     return get_tasks_by_playbook(db, playbook)
 
 
-@router.get("/playbooks/by-inventory", response_model=List[AnsibleTask])
+@router.get("/playbooks/by-inventory", response_model=List[AnsibleTaskResponse])
 def list_by_inventory(inventory: str, db: Session = Depends(get_db)):
     return get_tasks_by_inventory(db, inventory)
 
 
-@router.patch("/playbooks/{task_id}", response_model=AnsibleTask)
+@router.patch("/playbooks/{task_id}", response_model=AnsibleTaskResponse)
 def patch_playbook(task_id: int, updates: dict, db: Session = Depends(get_db)):
     # Validar que el playbook exista primero
     if not get_task_by_id(db, task_id):
@@ -72,7 +72,7 @@ def patch_playbook(task_id: int, updates: dict, db: Session = Depends(get_db)):
     return updated
 
 
-@router.put("/playbooks/{task_id}/playbook", response_model=AnsibleTask)
+@router.put("/playbooks/{task_id}/playbook", response_model=AnsibleTaskResponse)
 def put_playbook_name(task_id: int, playbook: str, db: Session = Depends(get_db)):
     updated = update_task_playbook(db, task_id, playbook)
     if not updated:
@@ -80,7 +80,7 @@ def put_playbook_name(task_id: int, playbook: str, db: Session = Depends(get_db)
     return updated
 
 
-@router.put("/playbooks/{task_id}/inventory", response_model=AnsibleTask)
+@router.put("/playbooks/{task_id}/inventory", response_model=AnsibleTaskResponse)
 def put_playbook_inventory(task_id: int, inventory: str, db: Session = Depends(get_db)):
     updated = update_task_inventory(db, task_id, inventory)
     if not updated:
@@ -88,7 +88,7 @@ def put_playbook_inventory(task_id: int, inventory: str, db: Session = Depends(g
     return updated
 
 
-@router.put("/playbooks/{task_id}/name", response_model=AnsibleTask)
+@router.put("/playbooks/{task_id}/name", response_model=AnsibleTaskResponse)
 def put_playbook_task_name(task_id: int, name: str, db: Session = Depends(get_db)):
     updated = update_task_name(db, task_id, name)
     if not updated:
@@ -112,7 +112,7 @@ def remove_playbook_by_name(name: str, db: Session = Depends(get_db)):
     return {"deleted": True}
 
 
-@router.post("/playbooks/bulk", response_model=List[AnsibleTask])
+@router.post("/playbooks/bulk", response_model=List[AnsibleTaskResponse])
 def bulk_create_playbooks(payload: List[AnsibleTaskCreate], db: Session = Depends(get_db)):
     return create_multiple_tasks(db, payload)
 
