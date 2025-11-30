@@ -26,6 +26,7 @@ class User(Base):
     system_uid: Mapped[int] = mapped_column(Integer, unique=True, index=True)
     system_gid: Mapped[int] = mapped_column(Integer, default=2000)
     ssh_public_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class UserCreate(BaseModel):
     username: str
@@ -34,6 +35,18 @@ class UserCreate(BaseModel):
     is_admin: int = 0
     is_active: int = 1
     ssh_public_key: str | None = None
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    is_admin: int
+    is_active: int
+    system_uid: int
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
 
 class ServerCreate(BaseModel):
     name: str
@@ -82,6 +95,18 @@ class MetricCreate(BaseModel):
     disk_usage: str
     timestamp: str
     gpu_usage: str = "N/A"
+
+class MetricResponse(BaseModel):
+    id: int
+    server_id: int
+    cpu_usage: str
+    memory_usage: str
+    disk_usage: str
+    timestamp: str
+    gpu_usage: str
+
+    class Config:
+        from_attributes = True
 
 class AnsibleTaskCreate(BaseModel):
     name: str
@@ -133,6 +158,19 @@ class ExecutedPlaybookResponse(BaseModel):
     id: int
     playbook_id: int
     user_id: int
+    servers: list[int]
+    executed_at: datetime
+    state: str
+
+    class Config:
+        from_attributes = True
+
+
+class ExecutedPlaybookResponseWithUser(BaseModel):
+    id: int
+    playbook_id: int
+    user_id: int
+    user_username: str | None = None
     servers: list[int]
     executed_at: datetime
     state: str

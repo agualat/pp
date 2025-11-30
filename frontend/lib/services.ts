@@ -30,9 +30,20 @@ export interface Execution {
   id: number;
   playbook_id: number;
   user_id: number;
+  user_username?: string;
   servers: number[];
   executed_at: string;
   state: string;
+}
+
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  is_admin: number;
+  is_active: number;
+  system_uid: number;
+  created_at: string;
 }
 
 // Servidores
@@ -99,6 +110,17 @@ export const playbooksService = {
     return response.data;
   },
 
+  async uploadPlaybookFile(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post<{ filename: string; path: string; size: number }>('/ansible/upload/playbook', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
   async create(data: { name: string; playbook: string; inventory: string }) {
     const response = await api.post<Playbook>('/ansible/playbooks', data);
     return response.data;
@@ -113,9 +135,10 @@ export const playbooksService = {
     await api.delete(`/ansible/playbooks/${id}`);
   },
 
-  async run(id: number, serverIds: number[]) {
-    const response = await api.post(`/ansible/playbooks/${id}/run`, serverIds, {
-      params: { server_ids: serverIds.join(',') }
+  async run(id: number, serverIds: number[], dryRun: boolean = false) {
+    const response = await api.post(`/ansible/playbooks/${id}/run`, {
+      server_ids: serverIds,
+      dry_run: dryRun
     });
     return response.data;
   },
@@ -155,6 +178,91 @@ export const executionsService = {
 
   async countByState(state: string) {
     const response = await api.get<{ count: number }>(`/executions/count/by-state/${state}`);
+    return response.data;
+  },
+};
+
+// Usuarios
+export const usersService = {
+  async getAll() {
+    const response = await api.get<User[]>('/users/');
+    return response.data;
+  },
+
+  async getById(id: number) {
+    const response = await api.get<User>(`/users/${id}`);
+    return response.data;
+  },
+
+  async getActive() {
+    const response = await api.get<User[]>('/users/active');
+    return response.data;
+  },
+
+  async getAdmins() {
+    const response = await api.get<User[]>('/users/admins');
+    return response.data;
+  },
+
+  async create(data: { username: string; email: string; password: string; is_admin?: number }) {
+    const response = await api.post<User>('/users/', data);
+    return response.data;
+  },
+
+  async bulkUpload(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/users/bulk-upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  async update(id: number, data: Partial<User>) {
+    const response = await api.patch<User>(`/users/${id}`, data);
+    return response.data;
+  },
+
+  async changePassword(id: number, newPassword: string) {
+    const response = await api.put(`/users/${id}/password`, null, {
+      params: { new_password: newPassword }
+    });
+    return response.data;
+  },
+
+  async activate(id: number) {
+    const response = await api.put<User>(`/users/${id}/activate`);
+    return response.data;
+  },
+
+  async deactivate(id: number) {
+    const response = await api.put<User>(`/users/${id}/deactivate`);
+    return response.data;
+  },
+
+  async toggleAdmin(id: number) {
+    const response = await api.put<User>(`/users/${id}/toggle-admin`);
+    return response.data;
+  },
+
+  async delete(id: number) {
+    await api.delete(`/users/${id}`);
+  },
+
+  async countTotal() {
+    const response = await api.get<{ count: number }>('/users/count/total');
+    return response.data;
+  },
+
+  async countActive() {
+    const response = await api.get<{ count: number }>('/users/count/active');
+    return response.data;
+  },
+
+  async countAdmin() {
+    const response = await api.get<{ count: number }>('/users/count/admin');
     return response.data;
   },
 };

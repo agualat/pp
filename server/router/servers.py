@@ -5,7 +5,7 @@ import os
 
 from ..utils.db import get_db
 from .auth import get_current_staff_user
-from ..models.models import Server, ServerCreate, ServerResponse
+from ..models.models import Server, ServerCreate, ServerResponse, MetricResponse
 from ..CRUD.servers import (
     create_server,
     get_server_by_id,
@@ -103,17 +103,32 @@ async def create_new_server(
     return new_server
 
 
+@router.get("/", response_model=List[ServerResponse])
+def list_servers(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return get_all_servers(db, skip=skip, limit=limit)
+
+
+# Rutas de conteo ANTES de las rutas con parámetros dinámicos
+@router.get("/count/total")
+def count_all_servers(db: Session = Depends(get_db)):
+    count = count_servers(db)
+    print(f"[SERVERS] Total count: {count}")
+    return {"count": count}
+
+
+@router.get("/count/by-status/{status_filter}")
+def count_servers_by_status_filter(status_filter: str, db: Session = Depends(get_db)):
+    count = count_servers_by_status(db, status_filter)
+    print(f"[SERVERS] Count by status '{status_filter}': {count}")
+    return {"count": count}
+
+
 @router.get("/{server_id}", response_model=ServerResponse)
 def read_server(server_id: int, db: Session = Depends(get_db)):
     server = get_server_by_id(db, server_id)
     if not server:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
     return server
-
-
-@router.get("/", response_model=List[ServerResponse])
-def list_servers(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return get_all_servers(db, skip=skip, limit=limit)
 
 
 @router.get("/by-name/{name}", response_model=ServerResponse)
@@ -256,19 +271,9 @@ def bulk_create_servers(payload: List[ServerCreate], db: Session = Depends(get_d
     return create_multiple_servers(db, payload)
 
 
-@router.get("/count/total")
-def count_all_servers(db: Session = Depends(get_db)):
-    return {"count": count_servers(db)}
-
-
-@router.get("/count/by-status/{status_filter}")
-def count_servers_by_status_filter(status_filter: str, db: Session = Depends(get_db)):
-    return {"count": count_servers_by_status(db, status_filter)}
-
-
 # --------- Metrics Endpoints ---------
 
-@router.get("/{server_id}/metrics", response_model=List[dict])
+@router.get("/{server_id}/metrics", response_model=List[MetricResponse])
 def get_server_metrics(server_id: int, limit: int = 10, db: Session = Depends(get_db)):
     """Obtiene las últimas métricas de un servidor específico"""
     from ..models.models import Metric

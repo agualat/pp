@@ -1,6 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List
+import os
+from pathlib import Path
+from pydantic import BaseModel
 
 from ..utils.db import get_db
 from .auth import get_current_staff_user
@@ -26,7 +29,74 @@ from ..CRUD.executed_playbooks import create_execution
 
 router = APIRouter(prefix="/ansible", tags=["ansible"], dependencies=[Depends(get_current_staff_user)])
 
+class RunPlaybookRequest(BaseModel):
+    server_ids: List[int]
+    dry_run: bool = False
+
+# Directorio para almacenar playbooks
+PLAYBOOKS_DIR = Path("/app/playbooks")
+PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
+
+INVENTORY_DIR = Path("/app/inventory")
+INVENTORY_DIR.mkdir(parents=True, exist_ok=True)
+
+# --------- Upload Files ---------
+
+@router.post("/upload/playbook")
+async def upload_playbook_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Sube un archivo YAML de playbook y devuelve la ruta donde se guardó
+    """
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No filename provided")
+    
+    if not file.filename.endswith(('.yml', '.yaml')):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File must be a YAML file (.yml or .yaml)")
+    
+    # Guardar archivo
+    file_path = PLAYBOOKS_DIR / file.filename
+    
+    try:
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        return {
+            "filename": file.filename,
+            "path": str(file_path),
+            "size": len(content)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error saving file: {str(e)}")
+
+
 # --------- Playbooks CRUD ---------
+
+# Ruta de conteo ANTES de las rutas con parámetros dinámicos
+@router.get("/playbooks/count")
+def count_playbooks(db: Session = Depends(get_db)):
+    count = count_tasks(db)
+    print(f"[PLAYBOOKS] Total count: {count}")
+    return {"count": count}
+
+
+@router.get("/playbooks", response_model=List[AnsibleTaskResponse])
+def list_playbooks(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return get_all_tasks(db, skip=skip, limit=limit)
+
+
+@router.get("/playbooks/by-playbook", response_model=List[AnsibleTaskResponse])
+def list_by_playbook(playbook: str, db: Session = Depends(get_db)):
+    return get_tasks_by_playbook(db, playbook)
+
+
+@router.get("/playbooks/by-inventory", response_model=List[AnsibleTaskResponse])
+def list_by_inventory(inventory: str, db: Session = Depends(get_db)):
+    return get_tasks_by_inventory(db, inventory)
+
 
 @router.post("/playbooks", response_model=AnsibleTaskResponse)
 def create_playbook(payload: AnsibleTaskCreate, db: Session = Depends(get_db)):
@@ -43,21 +113,6 @@ def read_playbook(task_id: int, db: Session = Depends(get_db)):
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playbook not found")
     return task
-
-
-@router.get("/playbooks", response_model=List[AnsibleTaskResponse])
-def list_playbooks(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return get_all_tasks(db, skip=skip, limit=limit)
-
-
-@router.get("/playbooks/by-playbook", response_model=List[AnsibleTaskResponse])
-def list_by_playbook(playbook: str, db: Session = Depends(get_db)):
-    return get_tasks_by_playbook(db, playbook)
-
-
-@router.get("/playbooks/by-inventory", response_model=List[AnsibleTaskResponse])
-def list_by_inventory(inventory: str, db: Session = Depends(get_db)):
-    return get_tasks_by_inventory(db, inventory)
 
 
 @router.patch("/playbooks/{task_id}", response_model=AnsibleTaskResponse)
@@ -117,23 +172,19 @@ def bulk_create_playbooks(payload: List[AnsibleTaskCreate], db: Session = Depend
     return create_multiple_tasks(db, payload)
 
 
-@router.get("/playbooks/count")
-def count_playbooks(db: Session = Depends(get_db)):
-    return {"count": count_tasks(db)}
-
-
 # --------- Execute Playbook ---------
 
 @router.post("/playbooks/{playbook_id}/run")
 def run_playbook(
     playbook_id: int, 
-    server_ids: List[int],
+    payload: RunPlaybookRequest,
     user: User = Depends(get_current_staff_user),
     db: Session = Depends(get_db)
 ):
     """
     Ejecuta un playbook de Ansible en los servidores especificados.
     Retorna el execution_id para hacer seguimiento.
+    Si dry_run es True, ejecuta en modo check (sin hacer cambios).
     """
     from ..utils.ansible_tasks import run_ansible_playbook
     
@@ -143,7 +194,7 @@ def run_playbook(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playbook not found")
     
     # Validar que servidores existan
-    for sid in server_ids:
+    for sid in payload.server_ids:
         if not get_server_by_id(db, sid):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid server id {sid}")
     
@@ -151,16 +202,17 @@ def run_playbook(
     execution_data = ExecutedPlaybookCreate(
         playbook_id=playbook_id,
         user_id=user.id,
-        servers=server_ids,
+        servers=payload.server_ids,
         state=ExecutionState.dry
     )
     execution = create_execution(db, execution_data)
     
-    # Encolar tarea de Celery
-    run_ansible_playbook.delay(execution.id)
+    # Encolar tarea de Celery con parámetro dry_run
+    run_ansible_playbook.delay(execution.id, payload.dry_run)
     
     return {
         "execution_id": execution.id,
         "status": "queued",
-        "message": "Playbook execution started. Check /executions/{execution_id} for status."
+        "dry_run": payload.dry_run,
+        "message": f"Playbook execution {'(dry run) ' if payload.dry_run else ''}started. Check /executions/{{execution_id}} for status."
     }

@@ -1,0 +1,393 @@
+[
+  {
+    "cpu": {
+      "usage_percent": 1.2,
+      "usage_per_core": [
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        1.0,
+        3.1,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        2.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        2.0,
+        0.0,
+        2.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "cores_logical": 32,
+      "cores_physical": 16,
+      "frequency": {
+        "current": 799.9964687500001,
+        "min": 800.0,
+        "max": 3200.0
+      },
+      "load_avg": [
+        0.17333984375,
+        0.26708984375,
+        0.38671875
+      ]
+    },
+    "ram": {
+      "total": 49084940288,
+      "available": 42913144832,
+      "percent": 12.6,
+      "used": 6171795456,
+      "free": 25116471296,
+      "active": 6850367488,
+      "inactive": 14622728192,
+      "buffers": 1023438848,
+      "cached": 17409273856,
+      "shared": 38277120,
+      "slab": 1756233728
+    },
+    "swap": {
+      "total": 8589930496,
+      "used": 0,
+      "free": 8589930496,
+      "percent": 0.0,
+      "sin": 0,
+      "sout": 0
+    },
+    "disk": {
+      "partitions": [
+        {
+          "device": "/dev/nvme0n1p2",
+          "mountpoint": "/app/client",
+          "fstype": "ext4",
+          "opts": "rw,relatime"
+        },
+        {
+          "device": "/dev/nvme0n1p2",
+          "mountpoint": "/app/client_data",
+          "fstype": "ext4",
+          "opts": "rw,relatime"
+        },
+        {
+          "device": "/dev/nvme0n1p2",
+          "mountpoint": "/etc/resolv.conf",
+          "fstype": "ext4",
+          "opts": "rw,relatime"
+        },
+        {
+          "device": "/dev/nvme0n1p2",
+          "mountpoint": "/etc/hostname",
+          "fstype": "ext4",
+          "opts": "rw,relatime"
+        },
+        {
+          "device": "/dev/nvme0n1p2",
+          "mountpoint": "/etc/hosts",
+          "fstype": "ext4",
+          "opts": "rw,relatime"
+        }
+      ],
+      "usage": {
+        "total": 501809635328,
+        "used": 105928523776,
+        "free": 370315309056,
+        "percent": 22.2
+      },
+      "io": {
+        "read_count": 178267,
+        "write_count": 6783853,
+        "read_bytes": 5077318656,
+        "write_bytes": 107262026752,
+        "read_time": 41626,
+        "write_time": 16312426,
+        "read_merged_count": 43417,
+        "write_merged_count": 6057460,
+        "busy_time": 4839965
+      }
+    },
+    "network": {
+      "io": {
+        "bytes_sent": 456253,
+        "bytes_recv": 358775,
+        "packets_sent": 3760,
+        "packets_recv": 3762,
+        "errin": 0,
+        "errout": 0,
+        "dropin": 0,
+        "dropout": 0
+      },
+      "connections": [
+        {
+          "fd": 17,
+          "family": 2,
+          "type": 1,
+          "laddr": [
+            "172.20.0.5",
+            34192
+          ],
+          "raddr": [
+            "172.20.0.6",
+            8000
+          ],
+          "status": "ESTABLISHED",
+          "pid": 1027
+        },
+        {
+          "fd": 3,
+          "family": 2,
+          "type": 1,
+          "laddr": [
+            "0.0.0.0",
+            8100
+          ],
+          "raddr": [],
+          "status": "LISTEN",
+          "pid": 1027
+        },
+        {
+          "fd": -1,
+          "family": 2,
+          "type": 1,
+          "laddr": [
+            "127.0.0.11",
+            40857
+          ],
+          "raddr": [],
+          "status": "LISTEN",
+          "pid": null
+        },
+        {
+          "fd": 18,
+          "family": 2,
+          "type": 1,
+          "laddr": [
+            "172.20.0.5",
+            8100
+          ],
+          "raddr": [
+            "172.20.0.1",
+            39512
+          ],
+          "status": "ESTABLISHED",
+          "pid": 1027
+        },
+        {
+          "fd": -1,
+          "family": 2,
+          "type": 2,
+          "laddr": [
+            "127.0.0.11",
+            51672
+          ],
+          "raddr": [],
+          "status": "NONE",
+          "pid": null
+        }
+      ]
+    },
+    "sensors": {
+      "temperatures": {
+        "nvme": [
+          {
+            "label": "Composite",
+            "current": 29.85,
+            "high": 82.85,
+            "critical": 84.85
+          },
+          {
+            "label": "Sensor 1",
+            "current": 29.85,
+            "high": 65261.85,
+            "critical": 65261.85
+          }
+        ],
+        "pch_lewisburg": [
+          {
+            "label": "",
+            "current": 34.0,
+            "high": null,
+            "critical": null
+          }
+        ],
+        "dell_smm": [
+          {
+            "label": "",
+            "current": 36.0,
+            "high": null,
+            "critical": null
+          },
+          {
+            "label": "",
+            "current": 31.0,
+            "high": null,
+            "critical": null
+          },
+          {
+            "label": "",
+            "current": 14.0,
+            "high": null,
+            "critical": null
+          },
+          {
+            "label": "",
+            "current": 22.0,
+            "high": null,
+            "critical": null
+          },
+          {
+            "label": "",
+            "current": 25.0,
+            "high": null,
+            "critical": null
+          }
+        ],
+        "coretemp": [
+          {
+            "label": "Package id 0",
+            "current": 36.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 8",
+            "current": 34.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 9",
+            "current": 35.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 10",
+            "current": 32.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 11",
+            "current": 32.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 12",
+            "current": 34.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 13",
+            "current": 34.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 14",
+            "current": 35.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 15",
+            "current": 35.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 0",
+            "current": 34.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 1",
+            "current": 34.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 2",
+            "current": 34.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 3",
+            "current": 32.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 4",
+            "current": 34.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 5",
+            "current": 33.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 6",
+            "current": 34.0,
+            "high": 81.0,
+            "critical": 91.0
+          },
+          {
+            "label": "Core 7",
+            "current": 35.0,
+            "high": 81.0,
+            "critical": 91.0
+          }
+        ]
+      },
+      "fans": {
+        "dell_smm": [
+          {
+            "label": "",
+            "current": 0
+          },
+          {
+            "label": "",
+            "current": 0
+          },
+          {
+            "label": "",
+            "current": 699
+          },
+          {
+            "label": "",
+            "current": 866
+          }
+        ]
+      },
+      "battery": null
+    },
+    "gpu": {
+      "devices": null,
+      "summary": "N/A"
+    },
+    "timestamp": "2025-11-30T14:41:20.198633"
+  }
+]

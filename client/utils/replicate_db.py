@@ -55,7 +55,8 @@ def ensure_users_table_exists(conn):
                 is_active INTEGER DEFAULT 1,
                 system_uid INTEGER UNIQUE NOT NULL,
                 system_gid INTEGER DEFAULT 2000,
-                ssh_public_key VARCHAR
+                ssh_public_key VARCHAR,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             );
             
             CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -112,25 +113,15 @@ def fetch_central_users():
 
 
 def sync_user_to_local(conn, user: Dict) -> bool:
-    """Sincroniza un usuario a la base de datos local (INSERT o UPDATE)"""
+    """Sincroniza un usuario a la base de datos local (INSERT simple)"""
     try:
         cursor = conn.cursor()
         
-        # Intentar INSERT, si falla hacer UPDATE
+        # INSERT directo (la tabla ya fue limpiada)
         cursor.execute("""
             INSERT INTO users (id, username, email, password_hash, is_admin, is_active, 
                              system_uid, system_gid, ssh_public_key)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (id) 
-            DO UPDATE SET
-                username = EXCLUDED.username,
-                email = EXCLUDED.email,
-                password_hash = EXCLUDED.password_hash,
-                is_admin = EXCLUDED.is_admin,
-                is_active = EXCLUDED.is_active,
-                system_uid = EXCLUDED.system_uid,
-                system_gid = EXCLUDED.system_gid,
-                ssh_public_key = EXCLUDED.ssh_public_key
         """, (
             user["id"],
             user["username"],
@@ -204,20 +195,21 @@ def replicate_users():
             local_conn.close()
             return 1
         
+        # Limpiar tabla antes de sincronizar (full sync)
+        cursor = local_conn.cursor()
+        cursor.execute("TRUNCATE TABLE users RESTART IDENTITY CASCADE")
+        cursor.close()
+        
         # Sincronizar cada usuario
         synced = 0
         for user in central_users:
             if sync_user_to_local(local_conn, user):
                 synced += 1
         
-        # Eliminar usuarios que ya no existen en central
-        central_user_ids = [user["id"] for user in central_users]
-        deleted = delete_removed_users(local_conn, central_user_ids)
-        
         # Commit todos los cambios
         local_conn.commit()
         
-        print(f"✅ Replication complete: {synced}/{len(central_users)} users synced, {deleted} users removed")
+        print(f"✅ Replication complete: {synced}/{len(central_users)} users synced")
         
         local_conn.close()
         return 0

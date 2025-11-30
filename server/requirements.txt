@@ -3,6 +3,7 @@ uvicorn[standard]
 gunicorn
 sqlalchemy
 psycopg2-binary
+python-multipart
 # Pin compatible versions to avoid bcrypt/passlib issues
 passlib[bcrypt]
 bcrypt==4.3.0
@@ -13,3 +14,4 @@ ansible-runner
 paramiko
 python-dotenv
 httpx
+websockets

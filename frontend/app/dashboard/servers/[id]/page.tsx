@@ -3,14 +3,185 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { serversService, Server, Metric } from '@/lib/services';
+import { getWebSocketURL } from '@/lib/api';
 
 interface RealtimeMetric {
-  cpu_usage: string;
-  memory_usage: string;
-  disk_usage: string;
-  gpu_usage: string;
+  cpu_usage: string | any;
+  memory_usage: string | any;
+  disk_usage: string | any;
+  gpu_usage: string | any;
   timestamp: string;
+  cpu?: any;
+  ram?: any;
+  disk?: any;
+  gpu?: any;
 }
+
+// Helper para formatear métricas del historial
+const formatHistoricalMetric = (value: string, type: 'cpu' | 'memory' | 'disk' | 'gpu') => {
+  if (!value || value === 'N/A') return 'N/A';
+  
+  try {
+    const parsed = JSON.parse(value);
+    
+    switch (type) {
+      case 'cpu':
+        // Extraer usage_percent del CPU
+        if (parsed.usage_percent !== undefined) {
+          return `${parsed.usage_percent.toFixed(1)}%`;
+        }
+        break;
+        
+      case 'memory':
+        // Extraer used de memoria
+        if (parsed.used !== undefined && parsed.total !== undefined) {
+          const usedGB = (parsed.used / (1024 ** 3)).toFixed(2);
+          const totalGB = (parsed.total / (1024 ** 3)).toFixed(2);
+          const percent = parsed.percent ? parsed.percent.toFixed(1) : 'N/A';
+          return `${usedGB}/${totalGB} GB (${percent}%)`;
+        }
+        break;
+        
+      case 'disk':
+        // Extraer usage.percent del disco
+        if (parsed.usage && parsed.usage.percent !== undefined) {
+          return `${parsed.usage.percent.toFixed(1)}%`;
+        }
+        break;
+        
+      case 'gpu':
+        // Formatear GPU
+        if (parsed.summary && parsed.summary !== 'N/A') {
+          const summary = typeof parsed.summary === 'string' ? JSON.parse(parsed.summary) : parsed.summary;
+          if (summary.load_percent !== undefined) {
+            return `${summary.load_percent.toFixed(1)}% (${summary.temp_c}°C)`;
+          }
+        }
+        if (parsed.devices && parsed.devices.length > 0) {
+          const first = parsed.devices[0];
+          return `${first.load.toFixed(1)}%`;
+        }
+        break;
+    }
+    
+    // Si no se pudo parsear correctamente, devolver el valor original
+    return value;
+  } catch {
+    // Si no es JSON, devolver como está
+    return value;
+  }
+};
+
+// Helper para parsear métricas
+const parseMetric = (value: any) => {
+  if (!value) return 'N/A';
+  
+  // Si ya es un objeto, devolverlo
+  if (typeof value === 'object') return value;
+  
+  // Si es string "N/A"
+  if (value === 'N/A') return 'N/A';
+  
+  // Intentar parsear JSON
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
+// Helper para formatear CPU
+const formatCPU = (metric: RealtimeMetric) => {
+  const cpu = metric.cpu || parseMetric(metric.cpu_usage);
+  if (cpu === 'N/A') return 'N/A';
+  
+  // Si es un número o string numérico simple
+  if (typeof cpu === 'string' || typeof cpu === 'number') {
+    const val = parseFloat(cpu as string);
+    if (!isNaN(val)) {
+      return `${val.toFixed(1)}%`;
+    }
+  }
+  
+  // Si es objeto con usage_percent
+  if (cpu && typeof cpu === 'object' && cpu.usage_percent !== undefined) {
+    return `${cpu.usage_percent.toFixed(1)}%`;
+  }
+  
+  return 'N/A';
+};
+
+// Helper para formatear Memoria
+const formatMemory = (metric: RealtimeMetric) => {
+  const mem = metric.ram || parseMetric(metric.memory_usage);
+  if (mem === 'N/A') return 'N/A';
+  
+  // Si es un número o string numérico simple
+  if (typeof mem === 'string' || typeof mem === 'number') {
+    const val = parseFloat(mem as string);
+    if (!isNaN(val)) {
+      return `${val.toFixed(1)}%`;
+    }
+  }
+  
+  // Si es objeto con percent
+  if (mem && typeof mem === 'object' && mem.percent !== undefined) {
+    const usedGB = mem.used ? (mem.used / (1024 ** 3)).toFixed(2) : '?';
+    const totalGB = mem.total ? (mem.total / (1024 ** 3)).toFixed(2) : '?';
+    return `${mem.percent.toFixed(1)}% (${usedGB}/${totalGB} GB)`;
+  }
+  
+  return 'N/A';
+};
+
+// Helper para formatear Disco
+const formatDisk = (metric: RealtimeMetric) => {
+  const disk = metric.disk?.usage || parseMetric(metric.disk_usage);
+  if (disk === 'N/A') return 'N/A';
+  
+  // Si es un número o string numérico simple
+  if (typeof disk === 'string' || typeof disk === 'number') {
+    const val = parseFloat(disk as string);
+    if (!isNaN(val)) {
+      return `${val.toFixed(1)}%`;
+    }
+  }
+  
+  // Si es objeto con percent
+  if (disk && typeof disk === 'object' && disk.percent !== undefined) {
+    return `${disk.percent.toFixed(1)}%`;
+  }
+  
+  return 'N/A';
+};
+
+// Helper para formatear GPU
+const formatGPU = (metric: RealtimeMetric) => {
+  const gpu = metric.gpu || parseMetric(metric.gpu_usage);
+  if (gpu === 'N/A' || !gpu) return 'N/A';
+  
+  // Si es string simple
+  if (typeof gpu === 'string') {
+    return gpu;
+  }
+  
+  // Si es objeto con summary
+  if (gpu && typeof gpu === 'object') {
+    if (gpu.summary && gpu.summary !== 'N/A') {
+      const summary = typeof gpu.summary === 'string' ? parseMetric(gpu.summary) : gpu.summary;
+      if (summary.load_percent !== undefined) {
+        return `${summary.load_percent.toFixed(1)}% (${summary.temp_c}°C)`;
+      }
+    }
+    
+    if (gpu.devices && gpu.devices.length > 0) {
+      const first = gpu.devices[0];
+      return `${first.name}: ${first.load.toFixed(1)}% (${first.temperature}°C)`;
+    }
+  }
+  
+  return 'N/A';
+};
 
 export default function ServerDetailPage() {
   const params = useParams();
@@ -25,8 +196,24 @@ export default function ServerDetailPage() {
   const [error, setError] = useState('');
   const [wsConnected, setWsConnected] = useState(false);
 
+  // Verificar que el serverId sea válido
   useEffect(() => {
-    if (serverId) {
+    console.log('[ServerDetail] Params:', params);
+    console.log('[ServerDetail] Server ID:', serverId);
+    if (isNaN(serverId)) {
+      console.error('[ServerDetail] Invalid server ID:', params.id);
+      setError('ID de servidor inválido');
+      setLoading(false);
+      return;
+    }
+  }, [params, serverId]);
+
+  useEffect(() => {
+    if (serverId && !isNaN(serverId)) {
+      console.log('[ServerDetail] Loading data for server ID:', serverId);
+      setLoading(true);
+      setError('');
+      setServer(null);
       loadServerData();
     }
   }, [serverId]);
@@ -34,55 +221,114 @@ export default function ServerDetailPage() {
   useEffect(() => {
     if (!server) return;
 
-    // Conectar al WebSocket para métricas en tiempo real
-    const wsUrl = `ws://localhost:8000/ws/metrics/${serverId}`;
-    const ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => {
-      console.log('WebSocket connected');
-      setWsConnected(true);
-    };
-
-    ws.onmessage = (event) => {
+    console.log('[ServerDetail] Setting up WebSocket for server:', serverId);
+    
+    let reconnectTimeout: NodeJS.Timeout;
+    let ws: WebSocket | null = null;
+    let reconnectAttempts = 0;
+    const maxReconnectDelay = 5000;
+    
+    const connect = () => {
       try {
-        const data = JSON.parse(event.data);
-        setRealtimeMetric(data);
+        // Conectar al WebSocket para métricas en tiempo real
+        const wsBaseUrl = getWebSocketURL();
+        const wsUrl = `${wsBaseUrl}/ws/metrics/${serverId}`;
+        console.log('[ServerDetail] Attempting WebSocket connection to:', wsUrl);
+        console.log('[ServerDetail] wsBaseUrl:', wsBaseUrl);
+        
+        ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          console.log('[ServerDetail] ✓ WebSocket connected successfully to:', wsUrl);
+          setWsConnected(true);
+          reconnectAttempts = 0; // Reset en conexión exitosa
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            // Ignorar mensajes de ping sin logging excesivo
+            if (data.type === 'ping') {
+              return;
+            }
+            console.log('[ServerDetail] WebSocket message received:', data);
+            setRealtimeMetric(data);
+          } catch (error) {
+            console.error('[ServerDetail] Error parsing WebSocket message:', error);
+            console.error('[ServerDetail] Raw message:', event.data);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('[ServerDetail] ✗ WebSocket error:', error);
+          console.error('[ServerDetail] Connection URL was:', wsUrl);
+          setWsConnected(false);
+        };
+
+        ws.onclose = (event) => {
+          console.log('[ServerDetail] WebSocket closed - Code:', event.code, 'Reason:', event.reason || 'No reason provided');
+          setWsConnected(false);
+          wsRef.current = null;
+          
+          // Reconexion automática con backoff exponencial suave
+          reconnectAttempts++;
+          // Primeros 3 intentos rápidos, luego más espaciados
+          let delay;
+          if (reconnectAttempts <= 3) {
+            delay = 1000; // 1 segundo para los primeros 3 intentos
+          } else {
+            delay = Math.min(2000 * Math.pow(1.3, reconnectAttempts - 4), maxReconnectDelay);
+          }
+          console.log(`[ServerDetail] Reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
+          
+          reconnectTimeout = setTimeout(() => {
+            connect();
+          }, delay);
+        };
       } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
+        console.error('[ServerDetail] Failed to create WebSocket:', error);
+        // Reintentar después de un segundo
+        reconnectTimeout = setTimeout(() => {
+          reconnectAttempts++;
+          connect();
+        }, 1000);
       }
     };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setWsConnected(false);
-    };
-
-    ws.onclose = () => {
-      console.log('WebSocket disconnected');
-      setWsConnected(false);
-    };
-
-    wsRef.current = ws;
+    
+    connect();
 
     // Cleanup al desmontar
     return () => {
+      console.log('[ServerDetail] Cleaning up WebSocket');
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
       if (wsRef.current) {
         wsRef.current.close();
+        wsRef.current = null;
       }
+      setWsConnected(false);
+      setRealtimeMetric(null);
     };
   }, [server, serverId]);
 
   const loadServerData = async () => {
     try {
+      console.log('[ServerDetail] Fetching server data for ID:', serverId);
       const [serverData, metricsData] = await Promise.all([
         serversService.getById(serverId),
         serversService.getMetrics(serverId),
       ]);
+      console.log('[ServerDetail] Server data loaded:', serverData);
       setServer(serverData);
       setMetrics(metricsData);
-    } catch (error) {
-      console.error('Error loading server data:', error);
-      setError('Error al cargar los datos del servidor');
+      setError('');
+    } catch (error: any) {
+      console.error('[ServerDetail] Error loading server data:', error);
+      console.error('[ServerDetail] Error details:', error.response?.data);
+      setError(error.response?.data?.detail || 'Error al cargar los datos del servidor');
+      setServer(null);
     } finally {
       setLoading(false);
     }
@@ -132,6 +378,8 @@ export default function ServerDetailPage() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Servidor no encontrado</h3>
+        {error && <p className="text-red-600 mb-4">{error}</p>}
+        <p className="text-gray-600 mb-4">ID solicitado: {serverId}</p>
         <button onClick={() => router.push('/dashboard/servers')} className="btn btn-primary mt-4">
           Volver a Servidores
         </button>
@@ -247,19 +495,19 @@ export default function ServerDetailPage() {
             <dl className="space-y-3">
               <div className="flex justify-between items-center">
                 <dt className="text-sm font-medium text-gray-600">CPU:</dt>
-                <dd className="text-sm font-semibold text-gray-900">{realtimeMetric.cpu_usage}</dd>
+                <dd className="text-sm font-semibold text-gray-900">{formatCPU(realtimeMetric)}</dd>
               </div>
               <div className="flex justify-between items-center">
                 <dt className="text-sm font-medium text-gray-600">Memoria:</dt>
-                <dd className="text-sm font-semibold text-gray-900">{realtimeMetric.memory_usage}</dd>
+                <dd className="text-sm font-semibold text-gray-900">{formatMemory(realtimeMetric)}</dd>
               </div>
               <div className="flex justify-between items-center">
                 <dt className="text-sm font-medium text-gray-600">Disco:</dt>
-                <dd className="text-sm font-semibold text-gray-900">{realtimeMetric.disk_usage}</dd>
+                <dd className="text-sm font-semibold text-gray-900">{formatDisk(realtimeMetric)}</dd>
               </div>
               <div className="flex justify-between items-center">
                 <dt className="text-sm font-medium text-gray-600">GPU:</dt>
-                <dd className="text-sm font-semibold text-gray-900">{realtimeMetric.gpu_usage}</dd>
+                <dd className="text-sm font-semibold text-gray-900">{formatGPU(realtimeMetric)}</dd>
               </div>
               <div className="flex justify-between items-center">
                 <dt className="text-sm font-medium text-gray-600">Última actualización:</dt>
@@ -302,10 +550,10 @@ export default function ServerDetailPage() {
                     <td className="px-4 py-3 text-sm text-gray-900">
                       {new Date(metric.timestamp).toLocaleString()}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{metric.cpu_usage}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{metric.memory_usage}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{metric.disk_usage}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{metric.gpu_usage}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{formatHistoricalMetric(metric.cpu_usage, 'cpu')}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{formatHistoricalMetric(metric.memory_usage, 'memory')}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{formatHistoricalMetric(metric.disk_usage, 'disk')}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{formatHistoricalMetric(metric.gpu_usage, 'gpu')}</td>
                   </tr>
                 ))}
               </tbody>

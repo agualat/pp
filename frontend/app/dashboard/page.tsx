@@ -20,6 +20,8 @@ export default function DashboardPage() {
 
   const loadStats = async () => {
     try {
+      console.log('[Dashboard] Loading stats...');
+      
       const [
         totalServers,
         onlineServers,
@@ -36,16 +38,27 @@ export default function DashboardPage() {
         executionsService.countByState('success'),
       ]);
 
-      setStats({
-        totalServers: totalServers.count,
-        onlineServers: onlineServers.count,
-        offlineServers: offlineServers.count,
-        totalPlaybooks: totalPlaybooks.count,
-        totalExecutions: totalExecutions.count,
-        successExecutions: successExecutions.count,
+      console.log('[Dashboard] Raw responses:', {
+        totalServers,
+        onlineServers,
+        offlineServers,
+        totalPlaybooks,
+        totalExecutions,
+        successExecutions,
       });
+
+      setStats({
+        totalServers: totalServers?.count ?? 0,
+        onlineServers: onlineServers?.count ?? 0,
+        offlineServers: offlineServers?.count ?? 0,
+        totalPlaybooks: totalPlaybooks?.count ?? 0,
+        totalExecutions: totalExecutions?.count ?? 0,
+        successExecutions: successExecutions?.count ?? 0,
+      });
+
+      console.log('[Dashboard] Stats set successfully');
     } catch (error) {
-      console.error('Error loading stats:', error);
+      console.error('[Dashboard] Error loading stats:', error);
     } finally {
       setLoading(false);
     }

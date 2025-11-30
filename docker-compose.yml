@@ -30,11 +30,14 @@ services:
       PORT: ${PORT}
       INSTALL_DEPS: "false"
       CLIENT_URL: "http://client:8100"
+      DEV_MODE: "true"  # Cambiar a "false" para producción
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "8000:8000"
+    volumes:
+      - ./server:/app/server  # Hot reload: montar código fuente
     restart: unless-stopped
 
   worker:
@@ -47,7 +50,24 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - ./server:/app/server  # Hot reload: montar código fuente
     command: ["bash", "-lc", "celery -A server.utils.ansible_tasks.celery_app worker --loglevel=INFO"]
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: pp_frontend
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app  # Hot reload: montar código fuente
+      - /app/node_modules  # Evitar sobrescribir node_modules del contenedor
+      - /app/.next  # Evitar sobrescribir cache de Next.js
     restart: unless-stopped
 
   client:
@@ -70,11 +90,13 @@ services:
       CENTRAL_DB_NAME: ${POSTGRES_DB}
       CENTRAL_DB_USER: ${POSTGRES_USER}
       CENTRAL_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DEV_MODE: "true"  # Cambiar a "false" para producción
     depends_on:
       - client_db
     ports:
       - "8100:8100"
     volumes:
+      - ./client:/app/client  # Hot reload: montar código fuente
       - client_data:/app/client_data
     restart: unless-stopped
 
@@ -85,6 +107,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5433:5432"  # Exponer en puerto 5433 del host para NSS/PAM
     volumes:
       - client_db_data:/var/lib/postgresql/data
     healthcheck:

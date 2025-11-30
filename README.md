@@ -1,220 +1,166 @@
-# Proyecto PP - Sistema de Gestión de Servidores con Ansible
+# Infrastructure Management Platform
 
-Sistema completo de gestión de servidores con monitoreo de métricas y ejecución de playbooks Ansible.
+Sistema completo de gestión de infraestructura con monitoreo en tiempo real, ejecución de playbooks Ansible y gestión centralizada de usuarios con autenticación SSH respaldada por PostgreSQL.
 
-## 🚀 Inicio Rápido
+## 🚀 Características Principales
 
-### 1. Configuración del entorno
+- 🖥️ **Gestión de Servidores**: Registro y monitoreo de servidores remotos
+- 📊 **Métricas en Tiempo Real**: CPU, memoria, disco y GPU vía WebSocket
+- ⚙️ **Ansible Integration**: Ejecución de playbooks con inventario dinámico
+- 👥 **Gestión de Usuarios**: CRUD completo con carga masiva CSV/TXT
+- 🔐 **Autenticación SSH Unificada**: Login con PostgreSQL para todos los servidores
+- 🌐 **Dashboard Web**: Interfaz moderna con Next.js y Tailwind CSS
+- 🔄 **Sincronización Automática**: Usuarios replicados cada 2 minutos
 
-Copia el archivo de ejemplo y ajusta las variables:
+## 🛠️ Stack Tecnológico
+
+- **Backend**: FastAPI, SQLAlchemy, PostgreSQL, Celery
+- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS
+- **Automation**: Ansible con inventario dinámico
+- **Monitoring**: WebSocket para métricas en tiempo real
+- **Authentication**: JWT + SSH con NSS/PAM PostgreSQL
+
+## 📦 Inicio Rápido
+
+### 1. Configurar entorno
 
 ```bash
 cp .env.example .env
+# Editar .env con tus credenciales
 ```
 
-**⚠️ IMPORTANTE**: Cambia las credenciales del usuario administrador por defecto en producción.
-
-### 2. Iniciar los servicios
+### 2. Iniciar servicios
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### 3. Acceder al sistema
 
-#### Usuario Administrador por Defecto
+- **Frontend**: http://localhost:3000
+- **API Server**: http://localhost:8000/docs
+- **Client API**: http://localhost:8100/docs
 
-Al inicializar la base de datos, se crea automáticamente un usuario administrador con estas credenciales:
+**Usuario por defecto**: `admin` / `admin123` (cambiar en producción)
 
-- **Usuario**: `admin` (configurable con `DEFAULT_ADMIN_USERNAME`)
-- **Email**: `admin@admin.com` (configurable con `DEFAULT_ADMIN_EMAIL`)
-- **Contraseña**: `admin123` (configurable con `DEFAULT_ADMIN_PASSWORD`)
+### 4. Configurar SSH Authentication (opcional)
 
-**🔒 Seguridad**: Cambia estas credenciales inmediatamente en producción usando las variables de entorno en el archivo `.env`.
-
-#### URLs de acceso
-
-- **API Server**: http://localhost:8000
-- **API Docs (Swagger)**: http://localhost:8000/docs
-- **Client API**: http://localhost:8100
-- **Client Docs**: http://localhost:8100/docs
-
-## 📦 Servicios
-
-### API Server (Puerto 8000)
-
-Backend principal con:
-- Autenticación JWT
-- Gestión de usuarios
-- Gestión de servidores
-- Playbooks Ansible
-- Historial de ejecuciones
-- WebSocket para actualizaciones en tiempo real
-
-### Client (Puerto 8100)
-
-Cliente de monitoreo que:
-- Recopila métricas del sistema (CPU, RAM, Disco, GPU)
-- Envía métricas al servidor cada 5 segundos
-- Proporciona API para consultar métricas locales
-- WebSocket para métricas en tiempo real
-
-### Worker (Celery)
-
-Procesa tareas asíncronas:
-- Ejecución de playbooks Ansible
-- Tareas programadas
-
-### Database (PostgreSQL)
-
-Base de datos con:
-- Usuarios y autenticación
-- Servidores registrados
-- Métricas históricas
-- Playbooks y ejecuciones
-
-## 🔐 Autenticación
-
-### Login
+Para permitir que los usuarios de PostgreSQL puedan hacer SSH a los servidores:
 
 ```bash
-curl -X POST http://localhost:8000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "admin",
-    "password": "admin123"
-  }'
+# En cada servidor host
+sudo bash setup_auth_complete.sh
 ```
 
-Respuesta:
-```json
-{
-  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-  "token_type": "bearer"
-}
+Ver [SETUP_SSH_AUTH.md](SETUP_SSH_AUTH.md) para más detalles.
+
+## 📁 Estructura del Proyecto
+
+```
+├── server/          # Backend API (FastAPI)
+├── client/          # Cliente de monitoreo
+├── frontend/        # Dashboard web (Next.js)
+├── docker-compose.yml
+└── setup_auth_complete.sh  # Setup SSH automático
 ```
 
-### Uso del token
+## 🔑 Gestión de Usuarios
 
-Incluye el token en el header `Authorization`:
+### Crear usuario individual
+Dashboard → Users → Create User
+
+### Carga masiva (CSV/TXT)
+Dashboard → Users → Bulk Upload
+
+**Formato CSV**:
+```csv
+username
+juan
+maria
+pedro
+```
+
+**Formato TXT**:
+```
+juan
+maria
+pedro
+```
+
+Los usuarios creados tendrán:
+- Email: `{username}@estud.usfq.edu.ec`
+- Password: `{username}2025`
+- UID: Auto-incrementado desde 2000
+
+### Autenticación SSH
+
+Una vez configurado (ver SETUP_SSH_AUTH.md), los usuarios pueden hacer SSH:
 
 ```bash
-curl http://localhost:8000/servers/ \
-  -H "Authorization: Bearer <tu-token>"
+ssh juan@servidor.com  # Password: juan2025
 ```
-
-## 🧪 Testing
-
-Se incluyen scripts de testing para ambas APIs:
-
-### Test Server API
-
-```bash
-bash test_server_api.sh
-```
-
-### Test Client API
-
-```bash
-bash test_client_api.sh
-```
-
-## 📝 Endpoints Principales
-
-### Autenticación
-- `POST /auth/signup` - Registrar nuevo usuario
-- `POST /auth/login` - Iniciar sesión (solo admins)
-- `GET /auth/verify` - Verificar token
-
-### Servidores
-- `POST /servers/` - Crear servidor
-- `GET /servers/` - Listar servidores
-- `GET /servers/{id}` - Obtener servidor
-- `PUT /servers/{id}/online` - Marcar como online
-- `DELETE /servers/{id}` - Eliminar servidor
-
-### Playbooks Ansible
-- `POST /ansible/playbooks` - Crear playbook
-- `GET /ansible/playbooks` - Listar playbooks
-- `POST /ansible/playbooks/{id}/run` - Ejecutar playbook
-
-### Ejecuciones
-- `GET /executions/` - Historial de ejecuciones
-- `GET /executions/{id}` - Detalle de ejecución
-- `GET /executions/by-state/{state}` - Filtrar por estado
-
-### Métricas (Client)
-- `GET /metrics/local` - Métricas detalladas del sistema
-- `GET /metrics/server-format` - Métricas en formato compacto
-
-## 🔧 Configuración Avanzada
-
-### Variables de Entorno
-
-Ver `.env.example` para todas las opciones disponibles.
-
-### Cambiar credenciales del admin por defecto
-
-Edita el archivo `.env`:
-
-```env
-DEFAULT_ADMIN_USERNAME=mi_admin
-DEFAULT_ADMIN_EMAIL=admin@miempresa.com
-DEFAULT_ADMIN_PASSWORD=contraseña_segura_123!
-```
-
-Luego reinicia los contenedores:
-
-```bash
-docker-compose down
-docker-compose up -d
-```
-
-### Crear usuarios administradores adicionales
-
-Una vez autenticado como admin, puedes crear más usuarios desde la API y luego promocionarlos a admin usando el endpoint correspondiente o directamente en la base de datos.
 
 ## 📊 Arquitectura
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Client    │────▶│  API Server  │────▶│  PostgreSQL │
-│  (Metrics)  │     │   (FastAPI)  │     │             │
+│  Frontend   │────▶│  API Server  │────▶│  PostgreSQL │
+│  (Next.js)  │     │   (FastAPI)  │     │   (Users)   │
 └─────────────┘     └──────────────┘     └─────────────┘
+                           │                     │
+                           ▼                     │
+                    ┌──────────────┐            │
+                    │Celery Worker │            │
+                    │  (Ansible)   │            │
+                    └──────────────┘            │
+                                                 │
+┌─────────────┐     ┌──────────────┐            │
+│   Metrics   │────▶│  Client DB   │◀───────────┘
+│   Client    │     │  (Replica)   │   Sync 2min
+└─────────────┘     └──────────────┘
                            │
                            ▼
                     ┌──────────────┐
-                    │Celery Worker │
-                    │  (Ansible)   │
+                    │  SSH Auth    │
+                    │(NSS/PAM Host)│
                     └──────────────┘
 ```
 
-## 🛠️ Desarrollo
-
-### Logs
-
-Ver logs de un servicio específico:
+## 🔧 Comandos Útiles
 
 ```bash
-docker-compose logs -f api
-docker-compose logs -f client
-docker-compose logs -f worker
+# Ver logs
+docker compose logs -f server
+docker compose logs -f frontend
+
+# Reiniciar servicios
+docker compose restart server
+
+# Acceder a la base de datos
+docker compose exec db psql -U postgres -d mydb
+
+# Ver usuarios
+docker compose exec db psql -U postgres -d mydb -c "SELECT username, system_uid, is_active FROM users;"
+
+# Forzar sincronización de usuarios
+docker compose exec client python3 /app/client/utils/replicate_db.py
 ```
 
-### Reiniciar servicios
+## 📚 Documentación Adicional
 
-```bash
-docker-compose restart api
-docker-compose restart client
-```
+- [Server README](server/README.md) - Backend API
+- [Client README](client/README.md) - Cliente de monitoreo
+- [Frontend README](frontend/README.md) - Dashboard web
+- [SETUP_SSH_AUTH.md](SETUP_SSH_AUTH.md) - Configuración SSH
 
-### Ejecutar comandos en el contenedor
+## 🔒 Seguridad
 
-```bash
-docker-compose exec api bash
-docker-compose exec db psql -U postgres -d mydb
-```
+- ✅ Contraseñas hasheadas con bcrypt
+- ✅ Autenticación JWT para API
+- ✅ SSH con verificación contra PostgreSQL
+- ✅ Puerto 5433 solo accesible desde localhost
+- ⚠️ Cambiar credenciales por defecto en producción
 
 ## 📄 Licencia
 
-[Tu licencia aquí]
+MIT

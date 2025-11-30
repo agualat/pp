@@ -30,7 +30,7 @@ async def websocket_status(ws: WebSocket):
         while True:
             data = get_system_info()
             await ws.send_json(data)
-            await asyncio.sleep(1)  # enviar cada 1s en "tiempo real"
+            await asyncio.sleep(0.5)  # enviar cada 0.5s para actualizaciones más rápidas
     except Exception:
         pass
 

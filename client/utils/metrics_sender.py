@@ -24,18 +24,22 @@ class MetricsSender:
         self.server_ws_url_override = os.getenv("SERVER_WS_URL")
         self.server_host = os.getenv("SERVER_HOST", "localhost")
         self.server_port = os.getenv("SERVER_PORT", "8000")
-        self.server_id: Optional[int] = None  # Se obtendrá del registro
-        self.interval = float(os.getenv("METRIC_INTERVAL", "5"))
+        self.server_id: Optional[int] = None  # Se obtendrá del registro (opcional ahora)
+        self.interval = float(os.getenv("METRIC_INTERVAL", "1"))  # Reducir a 1 segundo por defecto
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
         self._registered = False
+        
+        # Cachear hostname e IP para no calcularlos cada vez
+        self._hostname = self._get_hostname()
+        self._ip_address = self._get_local_ip()
 
     def _get_hostname(self) -> str:
         """Obtiene el hostname del cliente"""
         try:
             return socket.gethostname()
         except:
-            return f"client-{self.server_id}"
+            return f"client-unknown"
 
     def _get_local_ip(self) -> str:
         """Obtiene la IP local del cliente"""
@@ -50,7 +54,7 @@ class MetricsSender:
             return "127.0.0.1"
 
     async def _register_server(self):
-        """Registra el servidor/cliente en la API central y obtiene el ID"""
+        """Registra el servidor/cliente en la API central y obtiene el ID (opcional)"""
         if self._registered and self.server_id is not None:
             return
         
@@ -58,27 +62,25 @@ class MetricsSender:
             import httpx
             
             client_url = f"http://{self.server_host}:{self.server_port}"
-            hostname = self._get_hostname()
-            ip_address = self._get_local_ip()
             
             # Intentar registrar el servidor en la API
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(
                     f"{client_url}/api/server-config/register",
                     json={
-                        "name": hostname,
-                        "ip_address": ip_address,
+                        "name": self._hostname,
+                        "ip_address": self._ip_address,
                         "ssh_port": 22,
                         "ssh_user": "root",
                         "ssh_password": "",
-                        "description": f"Auto-registered client {hostname}"
+                        "description": f"Auto-registered client {self._hostname}"
                     }
                 )
                 
                 if response.status_code == 200:
                     result = response.json()
                     self.server_id = result.get('id')
-                    logger.info(f"✓ Server registered successfully: {hostname} ({ip_address}) - ID: {self.server_id}")
+                    logger.info(f"✓ Server registered successfully: {self._hostname} ({self._ip_address}) - ID: {self.server_id}")
                     self._registered = True
                     return True
                 else:
@@ -90,14 +92,11 @@ class MetricsSender:
     
     @property
     def ws_url(self) -> str:
+        """Retorna la URL del WebSocket - ahora usando el endpoint sin ID"""
         if self.server_ws_url_override:
             return self.server_ws_url_override
-        if self.server_id is None:
-            raise ValueError("Server ID not set. Registration failed.")
-        return f"ws://{self.server_host}:{self.server_port}/ws/server/{self.server_id}"
-        if self.server_ws_url_override:
-            return self.server_ws_url_override
-        return f"ws://{self.server_host}:{self.server_port}/ws/server/{self.server_id}"
+        # Usar el nuevo endpoint que no requiere ID
+        return f"ws://{self.server_host}:{self.server_port}/ws/metrics"
 
     async def _send_loop(self):
         backoff = RECONNECT_BASE
@@ -107,29 +106,26 @@ class MetricsSender:
         while not self._stop_event.is_set():
             if websockets is None:
                 logger.error("websockets library not installed. Install with: pip install websockets")
+                await asyncio.sleep(10)
+                continue
             try:
-                # Intentar registrar el servidor antes de conectar
+                # Intentar registrar el servidor antes de conectar (opcional, para obtener ID)
                 if not self._registered:
-                    logger.info("Registering server with central API...")
-                    success = await self._register_server()
-                    if not success:
-                        logger.error("Failed to register server. Retrying in 5 seconds...")
-                        await asyncio.sleep(5)
-                        continue
-                
-                if self.server_id is None:
-                    logger.error("Server ID not available. Cannot connect WebSocket.")
-                    await asyncio.sleep(5)
-                    continue
+                    logger.info("Attempting to register server with central API...")
+                    await self._register_server()
+                    # Continuar incluso si falla el registro, el WebSocket funcionará con IP/hostname
                 
                 logger.info(f"Connecting to {self.ws_url}")
                 
                 async with websockets.connect(self.ws_url, ping_interval=None) as ws:  # type: ignore
-                    logger.info("Connected. Sending metrics...")
+                    logger.info(f"Connected. Sending metrics as {self._hostname} ({self._ip_address})")
                     backoff = RECONNECT_BASE  # reset after success
                     consecutive_failures = 0  # reset failure counter
+                    
                     while not self._stop_event.is_set():
+                        # Construir métrica (puede usar server_id si está disponible, pero no es requerido)
                         metric = build_server_metric(self.server_id)
+                        
                         # Ensure payload is a plain dict for JSON serialization
                         if hasattr(metric, "model_dump"):
                             payload = getattr(metric, "model_dump")()  # pydantic v2
@@ -137,8 +133,14 @@ class MetricsSender:
                             payload = getattr(metric, "dict")()  # pydantic v1
                         else:
                             payload = metric  # assume already a dict
+                        
+                        # Agregar identificación (IP y hostname) a cada mensaje
+                        payload["ip_address"] = self._ip_address
+                        payload["hostname"] = self._hostname
+                        
                         await ws.send(json.dumps(payload))
                         await asyncio.sleep(self.interval)
+                        
             except Exception as e:
                 consecutive_failures += 1
                 

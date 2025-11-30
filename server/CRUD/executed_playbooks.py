@@ -36,8 +36,10 @@ def get_executions_by_user(db: Session, user_id: int) -> List[ExecutedPlaybook]:
     return db.query(ExecutedPlaybook).filter(ExecutedPlaybook.user_id == user_id).all()
 
 
-def get_executions_by_state(db: Session, state: ExecutionState) -> List[ExecutedPlaybook]:
-    return db.query(ExecutedPlaybook).filter(ExecutedPlaybook.state == state.value).all()
+def get_executions_by_state(db: Session, state: str) -> List[ExecutedPlaybook]:
+    """Obtiene ejecuciones por estado (acepta string o ExecutionState)"""
+    state_value = state if isinstance(state, str) else state.value
+    return db.query(ExecutedPlaybook).filter(ExecutedPlaybook.state == state_value).all()
 
 
 def get_executions_by_server(db: Session, server_id: int) -> List[ExecutedPlaybook]:
@@ -100,8 +102,10 @@ def count_executions(db: Session) -> int:
     return db.query(ExecutedPlaybook).count()
 
 
-def count_executions_by_state(db: Session, state: ExecutionState) -> int:
-    return db.query(ExecutedPlaybook).filter(ExecutedPlaybook.state == state.value).count()
+def count_executions_by_state(db: Session, state: str) -> int:
+    """Cuenta ejecuciones por estado (acepta string o ExecutionState)"""
+    state_value = state if isinstance(state, str) else state.value
+    return db.query(ExecutedPlaybook).filter(ExecutedPlaybook.state == state_value).count()
 
 
 def count_executions_for_playbook(db: Session, playbook_id: int) -> int:
