@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from ..utils.db import get_db
 from ..utils.auth import authenticate_user, get_user_from_token, hash_password
+from ..CRUD.users import create_user
 from ..models.models import (
     User,
+    UserCreate,
     SignupRequest,
     LoginRequest,
     TokenResponse,
@@ -32,12 +34,15 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter((User.username == payload.username) | (User.email == payload.email)).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username or email already exists")
-    # Crear usuario
-    hashed = hash_password(payload.password)
-    user = User(username=payload.username, email=payload.email, password_hash=hashed)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    # Crear usuario usando la función CRUD que asigna system_uid correctamente
+    user_data = UserCreate(
+        username=payload.username,
+        email=payload.email,
+        password=payload.password,
+        is_admin=0,
+        is_active=1
+    )
+    user = create_user(db, user_data)
     # Devolver token
     token = authenticate_user(db, payload.username, payload.password)
     assert token is not None

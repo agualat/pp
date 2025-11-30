@@ -12,7 +12,10 @@ def create_user(db: Session, user: UserCreate) -> User:
     
     # Get the next available system_uid (starting from 2000)
     max_uid = db.query(func.max(User.system_uid)).scalar()
-    next_uid = max_uid + 1 if max_uid and max_uid >= 2000 else 2000
+    if max_uid is None or max_uid < 2000:
+        next_uid = 2000
+    else:
+        next_uid = max_uid + 1
     
     db_user = User(
         username=user.username,
