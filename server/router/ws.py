@@ -20,7 +20,9 @@ async def client_metrics_ws(websocket: WebSocket, server_id: int):
     """
     from ..utils.db import SessionLocal
     
+    print(f"[WS] Frontend connecting to metrics stream for server {server_id}")
     await websocket.accept()
+    print(f"[WS] Frontend connected to server {server_id}")
     
     try:
         while True:
@@ -34,6 +36,7 @@ async def client_metrics_ws(websocket: WebSocket, server_id: int):
                     .first()
                 
                 if metric:
+                    print(f"[WS] Sending metric to frontend for server {server_id}: CPU={metric.cpu_usage}")
                     # Enviar métrica al frontend
                     await websocket.send_json({
                         "cpu_usage": metric.cpu_usage,
@@ -43,6 +46,7 @@ async def client_metrics_ws(websocket: WebSocket, server_id: int):
                         "timestamp": metric.timestamp
                     })
                 else:
+                    print(f"[WS] No metrics found for server {server_id}, sending N/A")
                     # Enviar mensaje de que no hay métricas
                     await websocket.send_json({
                         "cpu_usage": "N/A",
@@ -58,9 +62,11 @@ async def client_metrics_ws(websocket: WebSocket, server_id: int):
             await asyncio.sleep(0.5)
             
     except WebSocketDisconnect:
-        print(f"Client disconnected from metrics stream for server {server_id}")
+        print(f"[WS] Frontend disconnected from metrics stream for server {server_id}")
     except Exception as e:
-        print(f"Error in metrics WebSocket: {e}")
+        print(f"[WS] Error in metrics WebSocket for server {server_id}: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         try:
             await websocket.close()

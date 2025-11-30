@@ -24,7 +24,7 @@ class MetricsSender:
         self.server_ws_url_override = os.getenv("SERVER_WS_URL")
         self.server_host = os.getenv("SERVER_HOST", "localhost")
         self.server_port = os.getenv("SERVER_PORT", "8000")
-        self.server_id = int(os.getenv("SERVER_ID", "1"))
+        self.server_id: Optional[int] = None  # Se obtendrá del registro
         self.interval = float(os.getenv("METRIC_INTERVAL", "5"))
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
@@ -50,8 +50,8 @@ class MetricsSender:
             return "127.0.0.1"
 
     async def _register_server(self):
-        """Registra el servidor/cliente en la API central"""
-        if self._registered:
+        """Registra el servidor/cliente en la API central y obtiene el ID"""
+        if self._registered and self.server_id is not None:
             return
         
         try:
@@ -77,16 +77,21 @@ class MetricsSender:
                 
                 if response.status_code == 200:
                     result = response.json()
-                    logger.info(f"✓ Server registered successfully: {hostname} ({ip_address}) - ID: {result.get('id')}")
+                    self.server_id = result.get('id')
+                    logger.info(f"✓ Server registered successfully: {hostname} ({ip_address}) - ID: {self.server_id}")
                     self._registered = True
+                    return True
                 else:
                     logger.warning(f"Failed to register server: HTTP {response.status_code} - {response.text}")
+                    return False
         except Exception as e:
-            logger.debug(f"Could not register server: {e}")
-            # No es crítico, continuar de todas formas
-
     @property
     def ws_url(self) -> str:
+        if self.server_ws_url_override:
+            return self.server_ws_url_override
+        if self.server_id is None:
+            raise ValueError("Server ID not set. Registration failed.")
+        return f"ws://{self.server_host}:{self.server_port}/ws/server/{self.server_id}"
         if self.server_ws_url_override:
             return self.server_ws_url_override
         return f"ws://{self.server_host}:{self.server_port}/ws/server/{self.server_id}"
@@ -99,13 +104,23 @@ class MetricsSender:
         while not self._stop_event.is_set():
             if websockets is None:
                 logger.error("websockets library not installed. Install with: pip install websockets")
-                await asyncio.sleep(30)
-                continue
             try:
-                logger.info(f"Connecting to {self.ws_url}")
-                
                 # Intentar registrar el servidor antes de conectar
-                await self._register_server()
+                if not self._registered:
+                    logger.info("Registering server with central API...")
+                    success = await self._register_server()
+                    if not success:
+                        logger.error("Failed to register server. Retrying in 5 seconds...")
+                        await asyncio.sleep(5)
+                        continue
+                
+                if self.server_id is None:
+                    logger.error("Server ID not available. Cannot connect WebSocket.")
+                    await asyncio.sleep(5)
+                    continue
+                
+                logger.info(f"Connecting to {self.ws_url}")
+                async with websockets.connect(self.ws_url, ping_interval=None) as ws:  # type: ignore
                 
                 async with websockets.connect(self.ws_url, ping_interval=None) as ws:  # type: ignore
                     logger.info("Connected. Sending metrics...")
