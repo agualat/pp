@@ -1,0 +1,63 @@
+############################
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.manifest
+*.spec
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tool caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+
+# Logs & runtime
+*.log
+logs/
+celerybeat-schedule
+
+# Environment & secrets
+.env
+.env.*
+*.pem
+*.key
+ssh_keys/
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Docker
+*.pid
+docker-compose.override.yml
+
+# Node (future frontend)
+node_modules/
+
+# Generated configs (runtime templates)
+client/utils/nss-pgsql.conf.template
+client/utils/pam-pgsql.conf.template
+
+# Static collect target
+staticfiles/
+
+############################
