@@ -2,11 +2,50 @@ from .db import Base, engine, SessionLocal
 # Import all models so SQLAlchemy registers them before create_all
 from ..models.models import User, Server, Metric, AnsibleTask, ExecutedPlaybook, UserCreate
 from ..CRUD.users import create_user, get_user_by_username
+from sqlalchemy import text
 import os
 
 def init_db() -> None:
 	"""Crea las tablas de la base de datos"""
 	Base.metadata.create_all(bind=engine)
+
+def reset_sequences() -> None:
+	"""Resetea las secuencias de IDs de PostgreSQL para evitar conflictos"""
+	db = SessionLocal()
+	try:
+		# Lista de tablas y sus columnas de ID
+		tables = [
+			'users',
+			'servers',
+			'metrics',
+			'ansible_tasks',
+			'executed_playbooks'
+		]
+		
+		for table in tables:
+			try:
+				# Obtener el máximo ID actual de la tabla
+				result = db.execute(text(f"SELECT MAX(id) FROM {table}"))
+				max_id = result.scalar()
+				
+				if max_id is not None:
+					# Resetear la secuencia al siguiente valor disponible
+					db.execute(text(f"SELECT setval('{table}_id_seq', :max_id, true)"), {"max_id": max_id})
+					print(f"  ✓ Secuencia de '{table}' ajustada a {max_id}")
+				else:
+					# Si la tabla está vacía, resetear a 1
+					db.execute(text(f"SELECT setval('{table}_id_seq', 1, false)"))
+					print(f"  ✓ Secuencia de '{table}' reseteada a 1")
+			except Exception as e:
+				print(f"  ⚠ No se pudo resetear secuencia de '{table}': {e}")
+		
+		db.commit()
+		print("✓ Secuencias de base de datos sincronizadas")
+	except Exception as e:
+		print(f"✗ Error al resetear secuencias: {e}")
+		db.rollback()
+	finally:
+		db.close()
 
 def create_default_admin() -> None:
 	"""Crea un usuario administrador por defecto si no existe"""
@@ -51,6 +90,8 @@ if __name__ == "__main__":
 	print("Inicializando base de datos...")
 	init_db()
 	print("✓ Tablas de base de datos creadas (si no existían)")
+	print("\nSincronizando secuencias de IDs...")
+	reset_sequences()
 	print("\nCreando usuario administrador por defecto...")
 	create_default_admin()
 	print("\n✓ Inicialización completada")
