@@ -7,6 +7,7 @@ from typing import List, Optional
 import psycopg2
 import os
 from datetime import datetime
+from dateutil import parser as date_parser
 
 
 router = APIRouter(prefix="/api/sync", tags=["Synchronization"])
@@ -75,6 +76,14 @@ async def sync_users(users: List[UserSync]):
         
         # Procesar cada usuario del servidor central
         for user in users:
+            # Parsear created_at si viene como string
+            created_at_value = user.created_at
+            if isinstance(created_at_value, str):
+                try:
+                    created_at_value = date_parser.parse(created_at_value)
+                except:
+                    created_at_value = None
+            
             # Verificar si el usuario existe localmente
             cur.execute("SELECT id FROM users WHERE id = %s", (user.id,))
             existing = cur.fetchone()
@@ -102,7 +111,7 @@ async def sync_users(users: List[UserSync]):
                     user.system_uid,
                     user.system_gid,
                     user.ssh_public_key,
-                    user.created_at,
+                    created_at_value,
                     user.id
                 ))
                 users_updated += 1
@@ -123,7 +132,7 @@ async def sync_users(users: List[UserSync]):
                     user.system_uid,
                     user.system_gid,
                     user.ssh_public_key,
-                    user.created_at
+                    created_at_value
                 ))
                 users_created += 1
         
