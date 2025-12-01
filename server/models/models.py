@@ -52,7 +52,7 @@ class ServerCreate(BaseModel):
     name: str
     ip_address: str
     ssh_user: str = "root"
-    ssh_password: str = ""  # Password opcional para configurar SSH key
+    ssh_password: str  # Password requerido para configurar SSH key
     ssh_port: int = 22
     description: str = ""
 
@@ -63,6 +63,7 @@ class ServerResponse(BaseModel):
     status: str
     ssh_user: str
     ssh_private_key_path: str | None
+    ssh_status: str | None = "pending"
 
     class Config:
         from_attributes = True
@@ -76,6 +77,7 @@ class Server(Base):
     status: Mapped[str] = mapped_column(String, default="offline")
     ssh_user: Mapped[str] = mapped_column(String, default="root")
     ssh_private_key_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    ssh_status: Mapped[str] = mapped_column(String, default="pending")  # pending, deployed, failed
 
 class Metric(Base):
     __tablename__ = "metrics"

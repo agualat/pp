@@ -7,6 +7,7 @@ export interface Server {
   status: string;
   ssh_user: string;
   ssh_private_key_path: string | null;
+  ssh_status?: string;  // pending, deployed, failed
 }
 
 export interface Metric {
@@ -80,6 +81,14 @@ export const serversService = {
 
   async delete(id: number) {
     await api.delete(`/servers/${id}`);
+  },
+
+  async retrySSHDeploy(id: number, password: string) {
+    const response = await api.post(`/servers/${id}/retry-ssh-deploy`, {
+      ssh_password: password,
+      ssh_port: 22
+    });
+    return response.data;
   },
 
   async getMetrics(id: number) {

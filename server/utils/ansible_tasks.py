@@ -11,10 +11,14 @@ from ..models.models import ExecutionState
 
 
 @celery_app.task(bind=True)
-def run_ansible_playbook(self, execution_id: int):
+def run_ansible_playbook(self, execution_id: int, dry_run: bool = False):
     """
     Tarea de Celery que ejecuta un playbook de Ansible.
     Actualiza el estado de la ejecución en la base de datos.
+    
+    Args:
+        execution_id: ID de la ejecución en la base de datos
+        dry_run: Si es True, ejecuta en modo check (no hace cambios reales)
     """
     db = SessionLocal()
     
@@ -48,7 +52,8 @@ def run_ansible_playbook(self, execution_id: int):
                     server.name: {
                         "ansible_host": server.ip_address,
                         "ansible_user": server.ssh_user,
-                        "ansible_ssh_private_key_file": server.ssh_private_key_path,
+                        "ansible_ssh_private_key_file": f"/app/{server.ssh_private_key_path}",
+                        "ansible_ssh_common_args": "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
                     }
                     for server in servers
                 }
@@ -61,11 +66,18 @@ def run_ansible_playbook(self, execution_id: int):
             inventory_path = inv_file.name
         
         # Ejecutar el playbook con ansible-runner
+        # En modo dry_run, se usa extravars con check_mode activado
+        extravars = {}
+        if dry_run:
+            extravars['ansible_check_mode'] = True
+        
         runner_result = ansible_runner.run(
             playbook=playbook_task.playbook,
             inventory=inventory_path,
             quiet=False,
             verbosity=1,
+            extravars=extravars if extravars else None,
+            cmdline='--check' if dry_run else None,
         )
         
         # Determinar el estado final

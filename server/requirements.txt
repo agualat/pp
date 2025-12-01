@@ -10,6 +10,7 @@ bcrypt==4.3.0
 PyJWT
 celery
 kombu[sqlalchemy]
+ansible
 ansible-runner
 paramiko
 python-dotenv

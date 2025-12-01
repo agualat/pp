@@ -38,6 +38,8 @@ services:
       - "8000:8000"
     volumes:
       - ./server:/app/server  # Hot reload: montar código fuente
+      - ./playbooks:/app/playbooks  # Compartir directorio de playbooks
+      - ./ssh_keys:/app/ssh_keys  # Compartir claves SSH
     restart: unless-stopped
 
   worker:
@@ -52,7 +54,10 @@ services:
         condition: service_healthy
     volumes:
       - ./server:/app/server  # Hot reload: montar código fuente
-    command: ["bash", "-lc", "celery -A server.utils.ansible_tasks.celery_app worker --loglevel=INFO"]
+      - ./playbooks:/app/playbooks  # Compartir directorio de playbooks
+      - ./ssh_keys:/app/ssh_keys:ro  # Montar claves SSH (solo lectura)
+    entrypoint: []
+    command: ["celery", "-A", "server.utils.ansible_tasks", "worker", "--loglevel=INFO"]
     restart: unless-stopped
 
   frontend:

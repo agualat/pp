@@ -7,6 +7,8 @@ export default function ServersPage() {
   const [servers, setServers] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showRetryModal, setShowRetryModal] = useState(false);
+  const [selectedServer, setSelectedServer] = useState<Server | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -163,6 +165,9 @@ export default function ServersPage() {
                     Usuario SSH
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Estado SSH
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Estado
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -193,6 +198,37 @@ export default function ServersPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {server.ssh_user}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {server.ssh_status === 'deployed' ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Configurado
+                        </span>
+                      ) : server.ssh_status === 'pending' ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                          <svg className="animate-spin w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Pendiente
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setSelectedServer(server);
+                            setShowRetryModal(true);
+                          }}
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 hover:bg-red-200 transition-colors cursor-pointer"
+                        >
+                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          Falló - Reintentar
+                        </button>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
@@ -244,6 +280,22 @@ export default function ServersPage() {
           onClose={() => setShowModal(false)}
           onSuccess={() => {
             setShowModal(false);
+            loadServers();
+          }}
+        />
+      )}
+
+      {/* Retry SSH Deploy Modal */}
+      {showRetryModal && selectedServer && (
+        <RetrySSHModal
+          server={selectedServer}
+          onClose={() => {
+            setShowRetryModal(false);
+            setSelectedServer(null);
+          }}
+          onSuccess={() => {
+            setShowRetryModal(false);
+            setSelectedServer(null);
             loadServers();
           }}
         />
@@ -355,7 +407,7 @@ function AddServerModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
               disabled={loading}
             />
             <p className="text-xs text-gray-500 mt-1">
-              Se usará para configurar la clave SSH
+              Requerida para configurar la clave SSH automáticamente
             </p>
           </div>
 
@@ -374,6 +426,101 @@ function AddServerModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
               className="flex-1 btn btn-primary"
             >
               {loading ? 'Creando...' : 'Crear Servidor'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function RetrySSHModal({ 
+  server, 
+  onClose, 
+  onSuccess 
+}: { 
+  server: Server; 
+  onClose: () => void; 
+  onSuccess: () => void;
+}) {
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      await serversService.retrySSHDeploy(server.id, password);
+      onSuccess();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Error al desplegar la clave SSH');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-md w-full p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">Reintentar Configuración SSH</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-sm text-yellow-800">
+            <strong>Servidor:</strong> {server.name} ({server.ip_address})
+          </p>
+          <p className="text-xs text-yellow-700 mt-1">
+            La configuración de la clave SSH falló. Proporciona la contraseña correcta para reintentar.
+          </p>
+        </div>
+
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Contraseña SSH para {server.ssh_user}@{server.ip_address}
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="input"
+              placeholder="••••••••"
+              required
+              disabled={loading}
+              autoFocus
+            />
+          </div>
+
+          <div className="flex space-x-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              className="flex-1 btn btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 btn btn-primary"
+            >
+              {loading ? 'Desplegando...' : 'Reintentar'}
             </button>
           </div>
         </form>

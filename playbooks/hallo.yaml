@@ -1,0 +1,21 @@
+---
+- name: Hello World Playbook
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Print hello world message
+      debug:
+        msg: "¡Hola Mundo desde Ansible!"
+    
+    - name: Show current date
+      debug:
+        msg: "Fecha actual: {{ ansible_date_time.iso8601 }}"
+      when: ansible_date_time is defined
+    
+    - name: Display hostname
+      command: hostname
+      register: hostname_output
+    
+    - name: Show hostname result
+      debug:
+        var: hostname_output.stdout

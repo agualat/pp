@@ -11,28 +11,42 @@ def create_server(db: Session, server: ServerCreate) -> Server:
     # Generate SSH key pair
     private_key_path, public_key = generate_ssh_keypair(server.name)
     
-    # Create server in database
+    print(f"SSH key generated for {server.name}")
+    print(f"Public key: {public_key[:50]}...")
+    
+    # Create server in database with pending SSH status
     db_server = Server(
         name=server.name,
         ip_address=server.ip_address,
         status="offline",
         ssh_user=server.ssh_user,
-        ssh_private_key_path=private_key_path
+        ssh_private_key_path=private_key_path,
+        ssh_status="pending"
     )
     db.add(db_server)
     db.commit()
     db.refresh(db_server)
     
     # Deploy SSH key to remote server
+    print(f"Deploying SSH key to {server.ip_address}...")
     deploy_success = deploy_ssh_key(
         host=server.ip_address,
         username=server.ssh_user,
         password=server.ssh_password,
-        public_key=public_key
+        public_key=public_key,
+        port=getattr(server, 'ssh_port', 22)
     )
     
-    if not deploy_success:
-        print(f"Warning: Could not deploy SSH key to {server.ip_address}")
+    # Update SSH status based on deployment result
+    if deploy_success:
+        db_server.ssh_status = "deployed"  # type: ignore
+        print(f"✓ SSH key deployed successfully to {server.name}")
+    else:
+        db_server.ssh_status = "failed"  # type: ignore
+        print(f"✗ SSH key deployment failed for {server.name}")
+    
+    db.commit()
+    db.refresh(db_server)
     
     return db_server
 
@@ -195,6 +209,8 @@ def create_multiple_servers(db: Session, servers: List[ServerCreate]) -> List[Se
         # Generate SSH key pair for each server
         private_key_path, public_key = generate_ssh_keypair(server.name)
         
+        print(f"SSH key generated for {server.name}")
+        
         db_server = Server(
             name=server.name,
             ip_address=server.ip_address,
@@ -204,13 +220,21 @@ def create_multiple_servers(db: Session, servers: List[ServerCreate]) -> List[Se
         )
         db_servers.append(db_server)
         
-        # Deploy SSH key
-        deploy_ssh_key(
-            host=server.ip_address,
-            username=server.ssh_user,
-            password=server.ssh_password,
-            public_key=public_key
-        )
+        # Deploy SSH key if password is provided
+        if server.ssh_password:
+            print(f"Deploying SSH key to {server.ip_address}...")
+            deploy_success = deploy_ssh_key(
+                host=server.ip_address,
+                username=server.ssh_user,
+                password=server.ssh_password,
+                public_key=public_key,
+                port=getattr(server, 'ssh_port', 22)
+            )
+            
+            if deploy_success:
+                print(f"✓ SSH key deployed successfully to {server.name}")
+            else:
+                print(f"✗ Warning: Could not deploy SSH key to {server.ip_address}")
     
     db.add_all(db_servers)
     db.commit()

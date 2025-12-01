@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List
+from pydantic import BaseModel
 import os
 
 from ..utils.db import get_db
@@ -33,6 +34,12 @@ router = APIRouter(prefix="/servers", tags=["servers"], dependencies=[Depends(ge
 
 # URL del cliente desde variable de entorno
 CLIENT_URL = os.getenv("CLIENT_URL", "http://client:8100")
+
+
+class RetrySSHDeployRequest(BaseModel):
+    """Request model for retrying SSH key deployment"""
+    ssh_password: str
+    ssh_port: int = 22
 
 
 async def register_in_client_background(server: Server):
@@ -257,6 +264,66 @@ def remove_server_by_name(name: str, db: Session = Depends(get_db)):
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
     return {"deleted": True}
+
+
+@router.post("/{server_id}/retry-ssh-deploy")
+def retry_ssh_deploy(
+    server_id: int,
+    payload: RetrySSHDeployRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Reintentar el despliegue de clave SSH en un servidor que falló.
+    """
+    from ..utils.ssh import deploy_ssh_key
+    from pathlib import Path
+    
+    # Get server
+    server = get_server_by_id(db, server_id, check_status=False)
+    if not server:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+    
+    # Check if SSH key exists
+    public_key_path = Path(f"/app/{server.ssh_private_key_path}.pub")
+    if not public_key_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"SSH public key not found. Generate keys first."
+        )
+    
+    # Read public key
+    with open(public_key_path, 'r') as f:
+        public_key = f.read().strip()
+    
+    # Update status to pending while deploying
+    server.ssh_status = "pending"  # type: ignore
+    db.commit()
+    
+    # Try to deploy
+    deploy_success = deploy_ssh_key(
+        host=server.ip_address,
+        username=server.ssh_user,
+        password=payload.ssh_password,
+        public_key=public_key,
+        port=payload.ssh_port
+    )
+    
+    # Update status based on result
+    if deploy_success:
+        server.ssh_status = "deployed"  # type: ignore
+        db.commit()
+        return {
+            "success": True,
+            "ssh_status": "deployed",
+            "message": f"SSH key deployed successfully to {server.name}"
+        }
+    else:
+        server.ssh_status = "failed"  # type: ignore
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to deploy SSH key. Check password and connectivity."
+        )
 
 
 @router.post("/bulk", response_model=List[ServerResponse])
