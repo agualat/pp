@@ -221,8 +221,7 @@ async def server_metrics_ws(websocket: WebSocket):
                         name=client_hostname or f"server-{client_ip}",
                         ip_address=client_ip,
                         status="online",
-                        ssh_user="root",
-                        description=f"Auto-registered via metrics WebSocket"
+                        ssh_user="root"
                     )
                     db.add(server)
                     db.commit()
