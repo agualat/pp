@@ -29,6 +29,8 @@ from ..CRUD.servers import (
     count_servers_by_status,
 )
 from ..utils.client_registration import register_server_in_client, unregister_server_from_client
+from ..utils.user_sync import sync_users_to_client
+from ..CRUD.users import get_all_users
 
 router = APIRouter(prefix="/servers", tags=["servers"], dependencies=[Depends(get_current_staff_user)])
 
@@ -42,8 +44,9 @@ class RetrySSHDeployRequest(BaseModel):
     ssh_port: int = 22
 
 
-async def register_in_client_background(server: Server):
-    """Tarea en background para registrar servidor en el cliente"""
+async def register_in_client_background(server: Server, db: Session):
+    """Tarea en background para registrar servidor en el cliente y sincronizar usuarios"""
+    # Primero registrar el servidor en el cliente
     await register_server_in_client(
         client_url=CLIENT_URL,
         server_id=server.id,
@@ -53,6 +56,28 @@ async def register_in_client_background(server: Server):
         ssh_user=server.ssh_user,
         description=f"Server managed by {server.ssh_user}"
     )
+    
+    # Luego sincronizar todos los usuarios al cliente
+    users = get_all_users(db)
+    users_data = [
+        {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "password_hash": user.password_hash,
+            "is_admin": user.is_admin,
+            "is_active": user.is_active,
+            "system_uid": user.system_uid,
+            "system_gid": user.system_gid,
+            "ssh_public_key": user.ssh_public_key,
+            "created_at": user.created_at.isoformat() if user.created_at else None
+        }
+        for user in users
+    ]
+    
+    # Sincronizar usuarios con el cliente recién conectado
+    client_url = f"http://{server.ip_address}:8100"
+    await sync_users_to_client(client_url, users_data, server.name)
 
 
 async def unregister_from_client_background(server_id: int):
@@ -104,8 +129,8 @@ async def create_new_server(
     # Crear servidor en BD
     new_server = create_server(db, payload)
     
-    # Registrar en el cliente en background
-    background_tasks.add_task(register_in_client_background, new_server)
+    # Registrar en el cliente en background y sincronizar usuarios
+    background_tasks.add_task(register_in_client_background, new_server, db)
     
     return new_server
 
