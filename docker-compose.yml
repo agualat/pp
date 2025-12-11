@@ -13,7 +13,7 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d mydb"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -119,8 +119,9 @@ services:
       - "5433:5432"  # Exponer en puerto 5433 del host para NSS/PAM
     volumes:
       - client_db_data:/var/lib/postgresql/data
+      - ./client/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro  # Script de inicialización
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d mydb"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
