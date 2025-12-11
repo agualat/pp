@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from ..utils.db import Base
-from sqlalchemy import Integer, String, DateTime, ForeignKey, CheckConstraint
+from sqlalchemy import Integer, String, DateTime, ForeignKey, CheckConstraint, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.sql import func
@@ -23,7 +23,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String)
     is_admin: Mapped[int] = mapped_column(Integer, default=0)  # 0 = False, 1 = True
     is_active: Mapped[int] = mapped_column(Integer, default=1)  # 0 = False, 1 = True
-    must_change_password: Mapped[int] = mapped_column(Integer, default=0)  # 0 = False, 1 = True
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
     system_uid: Mapped[int] = mapped_column(Integer, unique=True, index=True)
     system_gid: Mapped[int] = mapped_column(Integer, default=2000)
     ssh_public_key: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -43,7 +43,7 @@ class UserResponse(BaseModel):
     email: str
     is_admin: int
     is_active: int
-    must_change_password: int
+    must_change_password: bool
     system_uid: int
     created_at: datetime | None = None
 
@@ -196,7 +196,7 @@ class LoginRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
-    must_change_password: int = 0  # Indica si debe cambiar contraseña
+    must_change_password: bool = False  # Indica si debe cambiar contraseña
 
 class ChangePasswordRequest(BaseModel):
     current_password: str

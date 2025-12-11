@@ -31,7 +31,7 @@ def ensure_tables_exist(conn):
                 password_hash VARCHAR NOT NULL,
                 is_admin INTEGER DEFAULT 0,
                 is_active INTEGER DEFAULT 1,
-                must_change_password INTEGER DEFAULT 0,
+                must_change_password BOOLEAN DEFAULT FALSE,
                 system_uid INTEGER UNIQUE NOT NULL,
                 system_gid INTEGER DEFAULT 2000,
                 ssh_public_key VARCHAR,
@@ -65,7 +65,7 @@ class UserSync(BaseModel):
     password_hash: str
     is_admin: int
     is_active: int
-    must_change_password: int = 0
+    must_change_password: bool = False
     system_uid: int
     system_gid: int
     ssh_public_key: Optional[str] = None

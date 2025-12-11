@@ -61,7 +61,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     
     # Verificar si debe cambiar contraseña
-    must_change = getattr(user, "must_change_password", 0)
+    must_change = getattr(user, "must_change_password", False)
     
     return TokenResponse(access_token=token, must_change_password=must_change)
 
@@ -114,7 +114,7 @@ def change_password(
     
     # Actualizar contraseña
     user.password_hash = hash_password(payload.new_password)
-    user.must_change_password = 0  # Desmarcar flag de cambio obligatorio
+    user.must_change_password = False  # Desmarcar flag de cambio obligatorio
     
     db.commit()
     db.refresh(user)

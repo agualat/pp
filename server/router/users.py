@@ -258,7 +258,7 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
                     new_user = create_user(db, user_data, auto_sync=False)  # No sincronizar individualmente
                     
                     # Marcar que debe cambiar contraseña en el primer login
-                    new_user.must_change_password = 1
+                    new_user.must_change_password = True
                     db.commit()
                     db.refresh(new_user)
                     
@@ -314,7 +314,7 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
                     new_user = create_user(db, user_data, auto_sync=False)  # No sincronizar individualmente
                     
                     # Marcar que debe cambiar contraseña en el primer login
-                    new_user.must_change_password = 1
+                    new_user.must_change_password = True
                     db.commit()
                     db.refresh(new_user)
                     
@@ -377,7 +377,7 @@ def change_password_from_client(
     
     # Actualizar contraseña en la base de datos central
     user.password_hash = hashed_password
-    user.must_change_password = 0  # Ya cambió la contraseña
+    user.must_change_password = False  # Ya cambió la contraseña
     db.commit()
     db.refresh(user)
     
