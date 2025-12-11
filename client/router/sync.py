@@ -162,69 +162,69 @@ async def sync_users(users: List[UserSync]):
                         created_at_value = date_parser.parse(created_at_value)
                     except:
                         created_at_value = None
-            
-            # Verificar si el usuario existe localmente
-            cur.execute("SELECT id FROM users WHERE id = %s", (user.id,))
-            existing = cur.fetchone()
-            
-            if existing:
-                # Actualizar usuario existente
-                try:
-                    cur.execute("""
-                        UPDATE users 
-                        SET username = %s, 
-                            email = %s, 
-                            password_hash = %s, 
-                            is_admin = %s, 
-                            is_active = %s, 
-                            system_uid = %s, 
-                            system_gid = %s, 
-                            ssh_public_key = %s,
-                            created_at = %s
-                        WHERE id = %s
-                    """, (
-                        user.username,
-                        user.email,
-                        user.password_hash,
-                        user.is_admin,
-                        user.is_active,
-                        user.system_uid,
-                        user.system_gid,
-                        user.ssh_public_key,
-                        created_at_value,
-                        user.id
-                    ))
-                    users_updated += 1
-                except psycopg2.IntegrityError as e:
-                    print(f"⚠️  Warning: Could not update user {user.username}: {str(e)}")
-                    conn.rollback()
-                    continue
-            else:
-                # Crear nuevo usuario
-                try:
-                    cur.execute("""
-                        INSERT INTO users 
-                        (id, username, email, password_hash, is_admin, is_active, 
-                         system_uid, system_gid, ssh_public_key, created_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (
-                        user.id,
-                        user.username,
-                        user.email,
-                        user.password_hash,
-                        user.is_admin,
-                        user.is_active,
-                        user.system_uid,
-                        user.system_gid,
-                        user.ssh_public_key,
-                        created_at_value
-                    ))
-                    users_created += 1
-                except psycopg2.IntegrityError as e:
-                    print(f"⚠️  Warning: Could not create user {user.username}: {str(e)}")
-                    conn.rollback()
-                    continue
-            
+                
+                # Verificar si el usuario existe localmente
+                cur.execute("SELECT id FROM users WHERE id = %s", (user.id,))
+                existing = cur.fetchone()
+                
+                if existing:
+                    # Actualizar usuario existente
+                    try:
+                        cur.execute("""
+                            UPDATE users 
+                            SET username = %s, 
+                                email = %s, 
+                                password_hash = %s, 
+                                is_admin = %s, 
+                                is_active = %s, 
+                                system_uid = %s, 
+                                system_gid = %s, 
+                                ssh_public_key = %s,
+                                created_at = %s
+                            WHERE id = %s
+                        """, (
+                            user.username,
+                            user.email,
+                            user.password_hash,
+                            user.is_admin,
+                            user.is_active,
+                            user.system_uid,
+                            user.system_gid,
+                            user.ssh_public_key,
+                            created_at_value,
+                            user.id
+                        ))
+                        users_updated += 1
+                    except psycopg2.IntegrityError as e:
+                        print(f"⚠️  Warning: Could not update user {user.username}: {str(e)}")
+                        conn.rollback()
+                        continue
+                else:
+                    # Crear nuevo usuario
+                    try:
+                        cur.execute("""
+                            INSERT INTO users 
+                            (id, username, email, password_hash, is_admin, is_active, 
+                             system_uid, system_gid, ssh_public_key, created_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            user.id,
+                            user.username,
+                            user.email,
+                            user.password_hash,
+                            user.is_admin,
+                            user.is_active,
+                            user.system_uid,
+                            user.system_gid,
+                            user.ssh_public_key,
+                            created_at_value
+                        ))
+                        users_created += 1
+                    except psycopg2.IntegrityError as e:
+                        print(f"⚠️  Warning: Could not create user {user.username}: {str(e)}")
+                        conn.rollback()
+                        continue
+                
             except Exception as e:
                 print(f"❌ Error processing user {user.username}: {str(e)}")
                 conn.rollback()
