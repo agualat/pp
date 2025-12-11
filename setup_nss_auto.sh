@@ -337,6 +337,12 @@ if [ -f /etc/ssh/sshd_config ]; then
     sed -i '/^@include common-auth/a auth    [success=1 default=ignore]    pam_unix.so nullok\nauth    requisite                       pam_deny.so\nauth    required                        pam_permit.so\nauth    optional                        include=sssd-pgsql' /etc/pam.d/sshd
   fi
   
+  # Configurar pam_mkhomedir para crear directorios home automáticamente
+  if ! grep -q "pam_mkhomedir" /etc/pam.d/sshd; then
+    sed -i '/session.*pam_env.so/a session    optional     pam_mkhomedir.so skel=/etc/skel umask=0022' /etc/pam.d/sshd
+    echo "   ✅ pam_mkhomedir configurado para crear directorios home automáticamente"
+  fi
+  
   # Reiniciar SSH
   systemctl restart sshd || systemctl restart ssh
   echo "   ✅ SSH configurado y reiniciado"
