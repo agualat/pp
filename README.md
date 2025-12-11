@@ -60,8 +60,7 @@ sudo bash setup_nss_auto.sh
 - ✅ **Sincronización automática**: Timer systemd cada 2 minutos
 - ✅ **Auto-configuración**: Detecta puertos y configuración automáticamente
 - ✅ **NSS/PAM Setup**: Configura autenticación completa
-
-Ver [SETUP_SSH_AUTH.md](SETUP_SSH_AUTH.md) para más detalles.
+- ✅ **Cambio de contraseña SSH**: Los usuarios pueden cambiar su contraseña via `passwd` y se sincroniza automáticamente a todos los servidores
 
 ## 📁 Estructura del Proyecto
 
@@ -104,9 +103,27 @@ pedro
 **Características:**
 - **Normalización automática**: Los usernames se convierten a minúsculas y se validan automáticamente
 - **Sincronización en tiempo real**: Los cambios se replican inmediatamente a todos los clientes
+- **Cambio de contraseña obligatorio**: Usuarios creados masivamente deben cambiar su contraseña en el primer login SSH
 - Email: `{username}@estud.usfq.edu.ec`
-- Password: `{username}2025`
+- Password inicial: `{username}2025`
 - UID: Auto-incrementado desde 2000
+
+### Cambio de Contraseña
+
+Los usuarios creados masivamente deben cambiar su contraseña en el primer login:
+
+```bash
+ssh juan@servidor.com
+Password: juan2025
+
+$ passwd
+Current password: juan2025
+New password: MiNuevaContraseña123!
+passwd: password updated successfully
+✅ Password changed successfully and synced to all servers
+```
+
+**El cambio se propaga automáticamente** a todos los servidores del sistema.
 
 ### 🔄 Sistema de Replicación en Tiempo Real
 
@@ -166,11 +183,40 @@ Regenera /etc/passwd y /etc/shadow
 
 ### Autenticación SSH
 
-Una vez configurado (ver SETUP_SSH_AUTH.md), los usuarios pueden hacer SSH:
+Una vez configurado con `setup_nss_auto.sh`, los usuarios pueden hacer SSH a cualquier servidor:
 
 ```bash
-ssh juan@servidor.com  # Password: juan2025
+ssh juan@servidor.com  # Password inicial: juan2025
 ```
+
+**Configuración del Servidor Central:**
+
+En el archivo `.env` del servidor, define la URL pública:
+
+```bash
+SERVER_URL=http://192.168.1.100:8000  # IP o dominio del servidor central
+```
+
+Esta URL se auto-configura en todos los clientes durante la primera sincronización, permitiendo que los cambios de contraseña se propaguen automáticamente.
+
+## 🖥️ Cliente Standalone
+
+Para ejecutar solo el cliente en un servidor remoto:
+
+```bash
+# 1. Copiar archivos necesarios
+scp -r client/ docker-compose.client.yml .env.client usuario@servidor:~/
+
+# 2. En el servidor remoto
+cd ~/
+mv .env.client .env
+docker compose -f docker-compose.client.yml up -d
+
+# 3. Configurar SSH (en el host)
+sudo bash setup_nss_auto.sh
+```
+
+El cliente se auto-registrará y comenzará a enviar métricas al servidor central.
 
 ## 📊 Arquitectura
 
@@ -247,10 +293,8 @@ getent passwd  # Ver usuarios disponibles
 ## 📚 Documentación Adicional
 
 - [Server README](server/README.md) - Backend API
-- [Client README](client/README.md) - Cliente de monitoreo
+- [Client README](client/README.md) - Cliente de monitoreo  
 - [Frontend README](frontend/README.md) - Dashboard web
-- [SETUP_SSH_AUTH.md](SETUP_SSH_AUTH.md) - Configuración SSH completa
-- [SYNC_SYSTEM.md](SYNC_SYSTEM.md) - Sistema de replicación en tiempo real (detalles técnicos)
 
 ## 🔒 Seguridad
 

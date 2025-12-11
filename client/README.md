@@ -23,9 +23,11 @@ Envía métricas al servidor central cada 5 segundos:
 ### Database Replication
 Recibe usuarios desde servidor central en tiempo real:
 - **Push instantáneo** desde servidor vía HTTP POST a `/sync/users`
+- **Auto-configuración**: Recibe y guarda la URL del servidor automáticamente
 - TRUNCATE + INSERT para garantizar consistencia
 - Solo usuarios activos (`is_active = 1`)
 - Regenera archivos NSS/PAM automáticamente
+- Captura cambios de contraseña vía PAM hook y los propaga al servidor central
 
 ### WebSocket Server
 Transmite métricas en tiempo real al frontend:
@@ -99,6 +101,7 @@ POST /sync/users
 Content-Type: application/json
 
 {
+  "server_url": "http://192.168.1.100:8000",  # Auto-configuración
   "users": [
     {
       "username": "juan",
@@ -107,7 +110,8 @@ Content-Type: application/json
       "system_uid": 2000,
       "system_gid": 2000,
       "is_active": true,
-      "is_admin": false
+      "is_admin": false,
+      "must_change_password": 1
     }
   ]
 }
@@ -115,14 +119,18 @@ Content-Type: application/json
 
 Campos replicados:
 - `username`, `email`, `password_hash`
-- `is_admin`, `is_active`
+- `is_admin`, `is_active`, `must_change_password`
 - `system_uid`, `system_gid`
 - `created_at`
+
+### Auto-configuración de SERVER_URL:
+El cliente guarda automáticamente la URL del servidor central en `/etc/default/sssd-pgsql`. Esto permite que los cambios de contraseña realizados vía SSH se envíen automáticamente al servidor central.
 
 ### Scripts NSS/PAM:
 Después de sincronizar usuarios, se regeneran automáticamente:
 - **generate_passwd_from_db.sh**: Crea `/etc/passwd-pgsql`
 - **generate_shadow_from_db.sh**: Crea `/var/lib/extrausers/shadow`
+- **sync_password_change.sh**: Hook PAM que captura cambios de contraseña
 
 Estos archivos son leídos por NSS en el host para autenticación SSH.
 
