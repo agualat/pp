@@ -6,6 +6,9 @@ Sistema completo de gestión de infraestructura con monitoreo en tiempo real, ej
 
 - 🖥️ **Gestión de Servidores**: Registro y monitoreo de servidores remotos
 - 📊 **Métricas en Tiempo Real**: CPU, memoria, disco y GPU vía WebSocket
+  - Dashboard actualizado en vivo cada 5 segundos
+  - Indicador visual de conexión WebSocket
+  - Historial de métricas almacenado
 - ⚙️ **Ansible Integration**: Ejecución de playbooks con inventario dinámico
 - 👥 **Gestión de Usuarios**: CRUD completo con carga masiva CSV/TXT
 - 🔐 **Autenticación SSH Unificada**: Login con PostgreSQL para todos los servidores
@@ -48,20 +51,31 @@ docker compose up -d
 Para permitir que los usuarios de PostgreSQL puedan hacer SSH a los servidores:
 
 ```bash
-# En cada servidor host
-sudo bash setup_auth_complete.sh
+# En cada servidor host (funciona incluso con tabla users vacía)
+sudo bash setup_nss_auto.sh
 ```
+
+**Características del script:**
+- ✅ **Funciona con tabla vacía**: No requiere usuarios existentes
+- ✅ **Sincronización automática**: Timer systemd cada 2 minutos
+- ✅ **Auto-configuración**: Detecta puertos y configuración automáticamente
+- ✅ **NSS/PAM Setup**: Configura autenticación completa
 
 Ver [SETUP_SSH_AUTH.md](SETUP_SSH_AUTH.md) para más detalles.
 
 ## 📁 Estructura del Proyecto
 
 ```
-├── server/          # Backend API (FastAPI)
-├── client/          # Cliente de monitoreo
-├── frontend/        # Dashboard web (Next.js)
-├── docker-compose.yml
-└── setup_auth_complete.sh  # Setup SSH automático
+├── server/                  # Backend API (FastAPI)
+├── client/                  # Cliente de monitoreo
+├── frontend/                # Dashboard web (Next.js)
+├── playbooks/               # Playbooks Ansible
+├── ssh_keys/                # Claves SSH de servidores
+├── docker-compose.yml       # Servicios principales
+├── docker-compose.client.yml # Cliente standalone
+├── setup_nss_auto.sh        # Setup SSH automático mejorado
+├── test_sync.sh             # Test de sincronización
+└── system_status.json       # Estado del sistema
 ```
 
 ## 🔑 Gestión de Usuarios
@@ -221,6 +235,13 @@ curl -X POST http://localhost:8000/sync/users/manual \
 
 # Probar sistema de sincronización completo
 ./test_sync.sh
+
+# Ver métricas en tiempo real del cliente
+curl http://localhost:8100/metrics/local
+
+# Verificar setup NSS/PAM en el host
+sudo systemctl status pgsql-users-sync.timer
+getent passwd  # Ver usuarios disponibles
 ```
 
 ## 📚 Documentación Adicional

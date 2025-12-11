@@ -5,25 +5,33 @@ Cliente que recolecta métricas del sistema y replica usuarios desde la base de 
 ## Características
 
 - 📊 Recolección de métricas (CPU, RAM, Disco, GPU)
-- 🔄 Replicación de usuarios cada 2 minutos
-- 🔌 WebSocket para métricas en tiempo real
+- 🔄 Replicación de usuarios en tiempo real (HTTP POST)
+- 🔌 WebSocket para transmisión de métricas en vivo
 - 🐳 PostgreSQL local (client_db) para autenticación
 - 📡 API REST para consultar métricas
+- 🔄 Sincronización automática cada 5 segundos al servidor
 
 ## Componentes
 
 ### Metrics Sender
 Envía métricas al servidor central cada 5 segundos:
-- CPU usage (%)
-- RAM usage (%)
-- Disk usage (%) 
-- GPU usage y memoria (si disponible)
+- CPU usage (%) con detalles de cores
+- RAM usage (%) con GB usados/totales
+- Disk usage (%) por partición
+- GPU usage, memoria y temperatura (NVIDIA si disponible)
 
 ### Database Replication
-Script que sincroniza usuarios desde DB central a client_db:
-- Ejecuta cada 2 minutos (cron)
-- TRUNCATE + INSERT para evitar conflictos
+Recibe usuarios desde servidor central en tiempo real:
+- **Push instantáneo** desde servidor vía HTTP POST a `/sync/users`
+- TRUNCATE + INSERT para garantizar consistencia
 - Solo usuarios activos (`is_active = 1`)
+- Regenera archivos NSS/PAM automáticamente
+
+### WebSocket Server
+Transmite métricas en tiempo real al frontend:
+- Endpoint: `ws://localhost:8100/ws/metrics/{server_id}`
+- Actualización cada 5 segundos
+- Formato JSON con todas las métricas del sistema
 
 ### API Local
 Endpoints para consultar métricas locales:
@@ -35,57 +43,74 @@ Endpoints para consultar métricas locales:
 ```
 client/
 ├── main.py                          # Entry point
+├── dockerfile                       # Container build
 ├── entrypoint.sh                    # Container startup
-├── requirements.txt
+├── init_db.sql                      # Database schema
+├── requirements.txt                 # Python dependencies
 ├── router/
-│   ├── metrics.py                   # Metrics API
-│   └── server_config.py
+│   ├── __init__.py
+│   ├── metrics.py                   # Metrics API endpoints
+│   └── sync.py                      # User sync endpoint
 ├── models/
-│   ├── client_server_config.py
-│   └── metrics.py
+│   └── metrics.py                   # SQLAlchemy models
 └── utils/
+    ├── __init__.py
     ├── metrics.py                   # System metrics collection
-    ├── metrics_sender.py            # Send to central server
-    ├── replicate_db.py              # User replication
-    └── server_config_manager.py
+    ├── generate_passwd_from_db.sh   # NSS passwd generator
+    ├── generate_shadow_from_db.sh   # NSS shadow generator
+    ├── nss-pgsql.conf.template      # NSS config template
+    └── pam-pgsql.conf.template      # PAM config template
 ```
 
 ## Configuración
 
-Variables de entorno en `.env`:
+Variables de entorno requeridas:
 
 ```env
-# Local DB
+# Database Local
 DB_HOST=client_db
 DB_PORT=5432
-DB_NAME=mydb
+DB_NAME=postgres
 DB_USER=postgres
 DB_PASSWORD=postgres
 
-# Central DB
-CENTRAL_DB_HOST=db
-CENTRAL_DB_PORT=5432
-CENTRAL_DB_NAME=mydb
-CENTRAL_DB_USER=postgres
-CENTRAL_DB_PASSWORD=postgres
-
-# Server
+# Servidor Central (para enviar métricas)
 SERVER_URL=http://api:8000
-SERVER_TOKEN=your-token-here
 SERVER_ID=1
+
+# Puerto API
+PORT=8100
 ```
 
-## Replicación de Usuarios
+## Replicación de Usuarios (Push desde Servidor)
 
-El script `replicate_db.py` ejecuta cada 2 minutos:
+El sistema utiliza **sincronización push** en tiempo real:
 
-```python
-# Proceso:
-1. Conectar a DB central
-2. Obtener usuarios activos
-3. TRUNCATE tabla local
-4. INSERT usuarios
-5. Log de resultados
+### Flujo:
+1. Usuario creado/modificado en servidor central
+2. Servidor envía HTTP POST a `/sync/users` de todos los clientes
+3. Cliente recibe lista completa de usuarios
+4. TRUNCATE + INSERT para garantizar consistencia
+5. Regenera automáticamente `/etc/passwd-pgsql` y `/var/lib/extrausers/shadow`
+
+### Endpoint de Sincronización:
+```bash
+POST /sync/users
+Content-Type: application/json
+
+{
+  "users": [
+    {
+      "username": "juan",
+      "email": "juan@example.com",
+      "password_hash": "$2b$12$...",
+      "system_uid": 2000,
+      "system_gid": 2000,
+      "is_active": true,
+      "is_admin": false
+    }
+  ]
+}
 ```
 
 Campos replicados:
@@ -93,6 +118,13 @@ Campos replicados:
 - `is_admin`, `is_active`
 - `system_uid`, `system_gid`
 - `created_at`
+
+### Scripts NSS/PAM:
+Después de sincronizar usuarios, se regeneran automáticamente:
+- **generate_passwd_from_db.sh**: Crea `/etc/passwd-pgsql`
+- **generate_shadow_from_db.sh**: Crea `/var/lib/extrausers/shadow`
+
+Estos archivos son leídos por NSS en el host para autenticación SSH.
 
 ## Métricas
 
@@ -138,14 +170,40 @@ Campos replicados:
 
 El `client_db` está expuesto en el puerto **5433** del host para:
 - Permitir que NSS/PAM del host lean usuarios
-- Facilitar debugging
+- Facilitar debugging y configuración
 
 ```bash
 # Conectar desde el host
-PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d mydb
+PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d postgres
 
 # Ver usuarios replicados
-SELECT username, system_uid, is_active FROM users;
+SELECT username, system_uid, is_active FROM users ORDER BY username;
+
+# Ver total de usuarios
+SELECT COUNT(*) FROM users WHERE is_active = true;
+```
+
+## API Endpoints
+
+### Métricas Locales
+```bash
+# Métricas actuales del sistema
+GET /metrics/local
+
+# Métricas en formato servidor
+GET /metrics/server-format
+```
+
+### Sincronización
+```bash
+# Recibir usuarios desde servidor (push)
+POST /sync/users
+```
+
+### WebSocket
+```bash
+# Stream de métricas en tiempo real
+WS /ws/metrics/{server_id}
 ```
 
 ## Desarrollo
@@ -156,52 +214,105 @@ SELECT username, system_uid, is_active FROM users;
 # Instalar dependencias
 pip install -r requirements.txt
 
+# Configurar variables de entorno
+export DB_HOST=localhost
+export DB_PORT=5433
+export DB_NAME=postgres
+export DB_USER=postgres
+export DB_PASSWORD=postgres
+export SERVER_URL=http://localhost:8000
+export SERVER_ID=1
+export PORT=8100
+
 # Ejecutar
 python main.py
 ```
 
-### Forzar replicación manual
+### Testing
 
 ```bash
-# Desde host
-docker compose exec client python3 /app/client/utils/replicate_db.py
+# Test métricas locales
+curl http://localhost:8100/metrics/local
 
-# Verificar
-docker compose exec client_db psql -U postgres -d mydb -c "SELECT COUNT(*) FROM users;"
+# Test WebSocket (requiere wscat)
+npm install -g wscat
+wscat -c ws://localhost:8100/ws/metrics/1
+
+# Test sincronización de usuarios
+curl -X POST http://localhost:8100/sync/users \
+  -H "Content-Type: application/json" \
+  -d '{"users": [{"username": "test", "email": "test@example.com", ...}]}'
 ```
 
-### Ver logs de replicación
+### Verificar sincronización
 
 ```bash
-docker compose logs client | grep "Replication"
+# Ver usuarios en la BD del cliente
+docker compose exec client_db psql -U postgres -d postgres \
+  -c "SELECT username, system_uid FROM users ORDER BY username;"
+
+# Ver archivos NSS generados
+docker compose exec client cat /etc/passwd-pgsql
+docker compose exec client cat /var/lib/extrausers/shadow
 ```
-
-## Cron Job
-
-El `entrypoint.sh` configura un cron job:
-
-```cron
-*/2 * * * * cd /app && python3 /app/client/utils/replicate_db.py >> /var/log/cron.log 2>&1
-```
-
-Ejecuta la replicación cada 2 minutos automáticamente.
 
 ## Troubleshooting
 
 ### Usuarios no se replican
 
 ```bash
-# Verificar conexión a DB central
-docker compose exec client psql -h db -U postgres -d mydb -c "SELECT COUNT(*) FROM users;"
+# Verificar logs del cliente
+docker compose logs client --tail 50 | grep sync
 
-# Ver logs
-docker compose logs client --tail 50
+# Probar endpoint manualmente
+curl -X POST http://localhost:8100/sync/users \
+  -H "Content-Type: application/json" \
+  -d '{"users": []}'
 
-# Forzar replicación
-docker compose exec client python3 /app/client/utils/replicate_db.py
+# Verificar BD del cliente
+docker compose exec client_db psql -U postgres -d postgres -c "SELECT COUNT(*) FROM users;"
 ```
 
 ### Métricas no se envían
+
+```bash
+# Verificar logs
+docker compose logs client --tail 50 | grep metrics
+
+# Verificar conexión al servidor
+docker compose exec client curl http://api:8000/health
+
+# Test manual de métricas
+curl http://localhost:8100/metrics/local
+```
+
+### WebSocket no conecta
+
+```bash
+# Verificar puerto
+docker compose ps client
+
+# Test conexión WebSocket
+wscat -c ws://localhost:8100/ws/metrics/1
+
+# Ver logs
+docker compose logs client | grep WebSocket
+```
+
+### Archivos NSS no se generan
+
+```bash
+# Verificar scripts
+docker compose exec client ls -la /app/client/utils/*.sh
+
+# Ejecutar manualmente
+docker compose exec client bash /app/client/utils/generate_passwd_from_db.sh
+docker compose exec client bash /app/client/utils/generate_shadow_from_db.sh
+
+# Verificar permisos
+docker compose exec client ls -la /etc/passwd-pgsql
+docker compose exec client ls -la /var/lib/extrausers/shadow
+```
 
 ```bash
 # Verificar SERVER_URL y SERVER_TOKEN

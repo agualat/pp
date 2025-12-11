@@ -9,9 +9,11 @@ API REST construida con FastAPI para gestión de infraestructura, usuarios y eje
 - 🖥️ Registro y monitoreo de servidores
 - 📋 CRUD de playbooks Ansible
 - ⚙️ Ejecución asíncrona con Celery
-- 📊 Historial de ejecuciones
-- 🔌 WebSocket para actualizaciones en tiempo real
+- 📊 Historial de ejecuciones y métricas
+- 🔌 WebSocket para métricas en tiempo real
 - 📦 Carga masiva de usuarios (CSV/TXT)
+- 🔄 Sincronización push automática a clientes
+- 🗂️ Almacenamiento de métricas históricas
 
 ## Endpoints Principales
 
@@ -32,10 +34,12 @@ API REST construida con FastAPI para gestión de infraestructura, usuarios y eje
 - `GET /` - Listar servidores
 - `POST /` - Registrar servidor
 - `GET /{id}` - Detalle de servidor
+- `GET /{id}/metrics` - Historial de métricas
 - `PUT /{id}` - Actualizar servidor
 - `DELETE /{id}` - Eliminar servidor
 - `GET /count` - Total de servidores
 - `PUT /{id}/online` - Marcar como online
+- `POST /metrics` - Recibir métricas de cliente
 
 ### Ansible (`/ansible`)
 - `GET /playbooks` - Listar playbooks
@@ -50,7 +54,14 @@ API REST construida con FastAPI para gestión de infraestructura, usuarios y eje
 - `GET /by-state/{state}` - Filtrar por estado
 
 ### WebSocket (`/ws`)
-- `/ws/servers/{server_id}` - Métricas en tiempo real
+- `/ws/metrics/{server_id}` - Métricas en tiempo real del servidor
+  - Conecta al WebSocket del cliente correspondiente
+  - Retransmite métricas al frontend
+  - Reconexión automática en caso de fallo
+
+### Sincronización (`/sync`)
+- `POST /sync/users` - Recibir usuarios desde servidor central
+- `POST /sync/users/manual` - Forzar sincronización manual
 
 ## Estructura
 

@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import psycopg2
 import os
+import subprocess
 from datetime import datetime
 from dateutil import parser as date_parser
 
@@ -149,16 +150,65 @@ async def sync_users(users: List[UserSync]):
         cur.close()
         conn.close()
         
-        # Regenerar archivos passwd y shadow
+        # Crear directorios necesarios si no existen
+        os.makedirs("/var/lib/extrausers", exist_ok=True)
+        os.makedirs("/etc", exist_ok=True)
+        
+        # Regenerar archivos passwd y shadow con manejo de errores
+        errors = []
+        
         try:
-            os.system("bash /app/client/utils/generate_passwd_from_db.sh")
-            os.system("bash /app/client/utils/generate_shadow_from_db.sh")
+            result = subprocess.run(
+                ["bash", "/app/client/utils/generate_passwd_from_db.sh"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode != 0:
+                error_msg = f"generate_passwd_from_db.sh failed (exit {result.returncode}): {result.stderr}"
+                print(f"ERROR: {error_msg}")
+                errors.append(error_msg)
+            else:
+                print("✅ Successfully generated /etc/passwd-pgsql")
+        except subprocess.TimeoutExpired:
+            error_msg = "generate_passwd_from_db.sh timed out"
+            print(f"ERROR: {error_msg}")
+            errors.append(error_msg)
         except Exception as e:
-            print(f"Warning: Could not regenerate passwd/shadow files: {e}")
+            error_msg = f"generate_passwd_from_db.sh exception: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            errors.append(error_msg)
+        
+        try:
+            result = subprocess.run(
+                ["bash", "/app/client/utils/generate_shadow_from_db.sh"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode != 0:
+                error_msg = f"generate_shadow_from_db.sh failed (exit {result.returncode}): {result.stderr}"
+                print(f"ERROR: {error_msg}")
+                errors.append(error_msg)
+            else:
+                print("✅ Successfully generated /var/lib/extrausers/shadow")
+        except subprocess.TimeoutExpired:
+            error_msg = "generate_shadow_from_db.sh timed out"
+            print(f"ERROR: {error_msg}")
+            errors.append(error_msg)
+        except Exception as e:
+            error_msg = f"generate_shadow_from_db.sh exception: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            errors.append(error_msg)
+        
+        # Si hay errores, incluirlos en la respuesta pero no fallar
+        message = f"Successfully synchronized {len(users)} users"
+        if errors:
+            message += f" (Warnings: {'; '.join(errors)})"
         
         return SyncResponse(
             success=True,
-            message=f"Successfully synchronized {len(users)} users",
+            message=message,
             users_synced=len(users),
             users_created=users_created,
             users_updated=users_updated,
