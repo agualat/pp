@@ -83,6 +83,21 @@ export const serversService = {
     await api.delete(`/servers/${id}`);
   },
 
+  async updateName(id: number, name: string) {
+    const response = await api.put<Server>(`/servers/${id}/name?name=${encodeURIComponent(name)}`);
+    return response.data;
+  },
+
+  async updateIp(id: number, ip_address: string) {
+    const response = await api.put<Server>(`/servers/${id}/ip?ip_address=${encodeURIComponent(ip_address)}`);
+    return response.data;
+  },
+
+  async syncUsers(id: number) {
+    const response = await api.post(`/servers/${id}/sync-users`);
+    return response.data;
+  },
+
   async retrySSHDeploy(id: number, password: string) {
     const response = await api.post(`/servers/${id}/retry-ssh-deploy`, {
       ssh_password: password,

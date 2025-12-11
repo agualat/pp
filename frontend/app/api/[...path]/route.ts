@@ -82,7 +82,9 @@ export async function PUT(
   { params }: { params: { path: string[] } }
 ) {
   const endpoint = `/${params.path.join('/')}`;
-  return proxyRequest(request, endpoint, 'PUT');
+  const searchParams = request.nextUrl.searchParams.toString();
+  const fullEndpoint = searchParams ? `${endpoint}?${searchParams}` : endpoint;
+  return proxyRequest(request, fullEndpoint, 'PUT');
 }
 
 export async function PATCH(
@@ -90,7 +92,9 @@ export async function PATCH(
   { params }: { params: { path: string[] } }
 ) {
   const endpoint = `/${params.path.join('/')}`;
-  return proxyRequest(request, endpoint, 'PATCH');
+  const searchParams = request.nextUrl.searchParams.toString();
+  const fullEndpoint = searchParams ? `${endpoint}?${searchParams}` : endpoint;
+  return proxyRequest(request, fullEndpoint, 'PATCH');
 }
 
 export async function DELETE(
@@ -98,5 +102,7 @@ export async function DELETE(
   { params }: { params: { path: string[] } }
 ) {
   const endpoint = `/${params.path.join('/')}`;
-  return proxyRequest(request, endpoint, 'DELETE');
+  const searchParams = request.nextUrl.searchParams.toString();
+  const fullEndpoint = searchParams ? `${endpoint}?${searchParams}` : endpoint;
+  return proxyRequest(request, fullEndpoint, 'DELETE');
 }

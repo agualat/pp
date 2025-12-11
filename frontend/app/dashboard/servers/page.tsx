@@ -8,6 +8,7 @@ export default function ServersPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showRetryModal, setShowRetryModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedServer, setSelectedServer] = useState<Server | null>(null);
   const [error, setError] = useState('');
 
@@ -257,6 +258,18 @@ export default function ServersPage() {
                         </svg>
                       </button>
                       <button
+                        onClick={() => {
+                          setSelectedServer(server);
+                          setShowEditModal(true);
+                        }}
+                        className="text-blue-600 hover:text-blue-900 mr-4"
+                        title="Editar"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button
                         onClick={() => handleDelete(server.id)}
                         className="text-red-600 hover:text-red-900"
                         title="Eliminar"
@@ -295,6 +308,22 @@ export default function ServersPage() {
           }}
           onSuccess={() => {
             setShowRetryModal(false);
+            setSelectedServer(null);
+            loadServers();
+          }}
+        />
+      )}
+
+      {/* Edit Server Modal */}
+      {showEditModal && selectedServer && (
+        <EditServerModal
+          server={selectedServer}
+          onClose={() => {
+            setShowEditModal(false);
+            setSelectedServer(null);
+          }}
+          onSuccess={() => {
+            setShowEditModal(false);
             setSelectedServer(null);
             loadServers();
           }}
@@ -521,6 +550,118 @@ function RetrySSHModal({
               className="flex-1 btn btn-primary"
             >
               {loading ? 'Desplegando...' : 'Reintentar'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditServerModal({ 
+  server, 
+  onClose, 
+  onSuccess 
+}: { 
+  server: Server; 
+  onClose: () => void; 
+  onSuccess: () => void;
+}) {
+  const [formData, setFormData] = useState({
+    name: server.name,
+    ip_address: server.ip_address,
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      // Actualizar nombre si cambió
+      if (formData.name !== server.name) {
+        await serversService.updateName(server.id, formData.name);
+      }
+      
+      // Actualizar IP si cambió
+      if (formData.ip_address !== server.ip_address) {
+        await serversService.updateIp(server.id, formData.ip_address);
+      }
+      
+      onSuccess();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Error al actualizar el servidor');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-md w-full p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">Editar Servidor</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Nombre del Servidor
+            </label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="input"
+              placeholder="servidor-1"
+              required
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Dirección IP
+            </label>
+            <input
+              type="text"
+              value={formData.ip_address}
+              onChange={(e) => setFormData({ ...formData, ip_address: e.target.value })}
+              className="input"
+              placeholder="192.168.1.100"
+              required
+              disabled={loading}
+            />
+          </div>
+
+          <div className="flex space-x-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              className="flex-1 btn btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 btn btn-primary"
+            >
+              {loading ? 'Guardando...' : 'Guardar Cambios'}
             </button>
           </div>
         </form>
