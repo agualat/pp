@@ -33,12 +33,6 @@ RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8100
 
-ENV SERVER_HOST=api \
-	SERVER_PORT=8000 \
-	SERVER_ID=1 \
-	METRIC_INTERVAL=5 \
-	SERVER_WS_URL=
-
 # NSS/PAM DB envs (optional)
 ENV DB_HOST= \
 	DB_PORT= \

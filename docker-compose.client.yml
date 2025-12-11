@@ -29,19 +29,11 @@ services:
       dockerfile: client/dockerfile
     container_name: pp_client
     environment:
-      SERVER_HOST: ${SERVER_HOST}
-      SERVER_PORT: ${SERVER_PORT}
-      METRIC_INTERVAL: ${METRIC_INTERVAL}
       DB_HOST: client_db
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}
       NSS_DB_USER: ${POSTGRES_USER}
       NSS_DB_PASSWORD: ${POSTGRES_PASSWORD}
-      CENTRAL_DB_HOST: ${CENTRAL_DB_HOST}
-      CENTRAL_DB_PORT: ${CENTRAL_DB_PORT}
-      CENTRAL_DB_NAME: ${CENTRAL_DB_NAME}
-      CENTRAL_DB_USER: ${CENTRAL_DB_USER}
-      CENTRAL_DB_PASSWORD: ${CENTRAL_DB_PASSWORD}
       DEV_MODE: ${DEV_MODE:-false}
     depends_on:
       client_db:
