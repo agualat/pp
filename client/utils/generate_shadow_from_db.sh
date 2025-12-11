@@ -7,7 +7,7 @@ set -e  # Exit on error
 source /etc/default/sssd-pgsql 2>/dev/null || {
   DB_HOST="${DB_HOST:-localhost}"
   DB_PORT="${DB_PORT:-5433}"
-  DB_NAME="${DB_NAME:-mydb}"
+  DB_NAME="${DB_NAME:-postgres}"
   NSS_DB_USER="${NSS_DB_USER:-postgres}"
   NSS_DB_PASSWORD="${NSS_DB_PASSWORD:-postgres}"
 }

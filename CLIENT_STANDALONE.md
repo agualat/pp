@@ -62,12 +62,30 @@ DEV_MODE=false
 
 ### 3. Iniciar el cliente
 
+**⚠️ IMPORTANTE: Debes especificar el archivo docker-compose correcto**
+
 ```bash
-# Si estás en el directorio raíz del repositorio
+# Opción 1: Usando .env.client (recomendado para standalone)
+docker compose --env-file .env.client -f docker-compose.client.yml up -d
+
+# Opción 2: Renombrando .env.client a .env
+cp .env.client .env
 docker compose -f docker-compose.client.yml up -d
 
-# O si renombraste el archivo
-docker compose up -d
+# Opción 3: Si clonaste el repo completo (asegúrate de usar -f)
+docker compose -f docker-compose.client.yml --env-file .env.client up -d
+```
+
+**Verificar que está corriendo:**
+```bash
+docker compose -f docker-compose.client.yml ps
+docker compose -f docker-compose.client.yml logs -f client
+```
+
+**Probar el health check:**
+```bash
+curl http://localhost:8100/health
+# Debería retornar: {"status":"healthy","database":"connected","users_count":0}
 ```
 
 ### 4. Registrar el cliente en el servidor central

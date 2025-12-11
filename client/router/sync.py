@@ -85,7 +85,7 @@ def get_db_connection():
     return psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
         port=int(os.getenv("DB_PORT", "5432")),
-        database=os.getenv("DB_NAME", "mydb"),
+        database=os.getenv("DB_NAME", "postgres"),
         user=os.getenv("NSS_DB_USER", "postgres"),
         password=os.getenv("NSS_DB_PASSWORD", "postgres")
     )
