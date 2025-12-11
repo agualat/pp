@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR NOT NULL,
     is_admin INTEGER DEFAULT 0,
     is_active INTEGER DEFAULT 1,
-    must_change_password INTEGER DEFAULT 0,
+    must_change_password BOOLEAN DEFAULT FALSE,
     system_uid INTEGER UNIQUE NOT NULL,
     system_gid INTEGER DEFAULT 2000,
     ssh_public_key VARCHAR,
