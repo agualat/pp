@@ -493,7 +493,7 @@ pedro
                         <ul className="text-sm space-y-1">
                           {bulkResult.users_failed.map((user: any, idx: number) => (
                             <li key={idx} className="text-red-700">
-                              ✗ {user.username}: {user.reason}
+                              ✗ {user.username}: {typeof user.reason === 'string' ? user.reason : JSON.stringify(user.reason)}
                             </li>
                           ))}
                         </ul>

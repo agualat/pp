@@ -12,9 +12,16 @@ async function proxyRequest(
     const cookieStore = await cookies();
     const token = cookieStore.get('token')?.value;
 
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-    };
+    // Detectar si es FormData (multipart/form-data)
+    const contentType = request.headers.get('content-type');
+    const isFormData = contentType?.includes('multipart/form-data');
+
+    const headers: HeadersInit = {};
+
+    // Solo agregar Content-Type si NO es FormData
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -27,9 +34,15 @@ async function proxyRequest(
 
     // Agregar body si no es GET o HEAD
     if (method !== 'GET' && method !== 'HEAD') {
-      const body = await request.text();
-      if (body) {
-        options.body = body;
+      if (isFormData) {
+        // Para FormData, enviar el FormData directamente
+        options.body = await request.formData();
+      } else {
+        // Para JSON, enviar como texto
+        const body = await request.text();
+        if (body) {
+          options.body = body;
+        }
       }
     }
 

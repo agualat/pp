@@ -5,17 +5,21 @@ const API_URL = '/api';
 
 export const api = axios.create({
   baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  // Importante: enviar cookies en cada request
-  withCredentials: true,
+  // No establecer Content-Type por defecto, dejarlo que axios lo maneje automáticamente
+  // Esto permite que FormData se envíe correctamente con multipart/form-data
+  // withCredentials: true,
 });
 
 // Interceptor para logging
 api.interceptors.request.use(
   (config) => {
     console.log('[API] Request:', config.method?.toUpperCase(), config.url);
+    
+    // Solo establecer Content-Type como JSON si no es FormData
+    if (!config.data || !(config.data instanceof FormData)) {
+      config.headers['Content-Type'] = 'application/json';
+    }
+    
     return config;
   },
   (error) => {

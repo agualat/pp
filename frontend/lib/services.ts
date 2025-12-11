@@ -221,11 +221,7 @@ export const usersService = {
   async bulkUpload(file: File) {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await api.post('/users/bulk-upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    const response = await api.post('/users/bulk-upload', formData);
     return response.data;
   },
 

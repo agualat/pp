@@ -324,6 +324,8 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
                         "email": new_user.email,
                         "original_username": original_username if original_username != username else None
                     })
+
+                    _trigger_user_sync(db)
                 except Exception as e:
                     db.rollback()  # Rollback en caso de error
                     users_failed.append({"username": username, "reason": str(e)})

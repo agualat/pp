@@ -55,6 +55,7 @@ async def sync_users_to_new_server(server: Server, db: Session):
             "password_hash": user.password_hash,
             "is_admin": user.is_admin,
             "is_active": user.is_active,
+            "must_change_password": user.must_change_password,
             "system_uid": user.system_uid,
             "system_gid": user.system_gid,
             "ssh_public_key": user.ssh_public_key,
