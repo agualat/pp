@@ -18,7 +18,7 @@ export default function LoginPage() {
 
     try {
       const response = await authService.login(username, password);
-      authService.setToken(response.access_token);
+      // El token se guarda automáticamente en una cookie httpOnly
       router.push('/dashboard');
     } catch (err: any) {
       setError(

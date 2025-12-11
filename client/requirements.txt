@@ -1,7 +1,6 @@
 fastapi
 uvicorn[standard]
 psutil
-websockets
 pydantic
 python-dotenv
 psycopg2-binary

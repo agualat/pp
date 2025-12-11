@@ -1,21 +1,8 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { serversService, Server, Metric } from '@/lib/services';
-import { getWebSocketURL } from '@/lib/api';
-
-interface RealtimeMetric {
-  cpu_usage: string | any;
-  memory_usage: string | any;
-  disk_usage: string | any;
-  gpu_usage: string | any;
-  timestamp: string;
-  cpu?: any;
-  ram?: any;
-  disk?: any;
-  gpu?: any;
-}
 
 // Helper para formatear métricas del historial
 const formatHistoricalMetric = (value: string, type: 'cpu' | 'memory' | 'disk' | 'gpu') => {
@@ -187,14 +174,11 @@ export default function ServerDetailPage() {
   const params = useParams();
   const router = useRouter();
   const serverId = parseInt(params.id as string);
-  const wsRef = useRef<WebSocket | null>(null);
   
   const [server, setServer] = useState<Server | null>(null);
   const [metrics, setMetrics] = useState<Metric[]>([]);
-  const [realtimeMetric, setRealtimeMetric] = useState<RealtimeMetric | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [wsConnected, setWsConnected] = useState(false);
 
   // Verificar que el serverId sea válido
   useEffect(() => {
@@ -217,101 +201,6 @@ export default function ServerDetailPage() {
       loadServerData();
     }
   }, [serverId]);
-
-  useEffect(() => {
-    if (!server) return;
-
-    console.log('[ServerDetail] Setting up WebSocket for server:', serverId);
-    
-    let reconnectTimeout: NodeJS.Timeout;
-    let ws: WebSocket | null = null;
-    let reconnectAttempts = 0;
-    const maxReconnectDelay = 5000;
-    
-    const connect = () => {
-      try {
-        // Conectar al WebSocket para métricas en tiempo real
-        const wsBaseUrl = getWebSocketURL();
-        const wsUrl = `${wsBaseUrl}/ws/metrics/${serverId}`;
-        console.log('[ServerDetail] Attempting WebSocket connection to:', wsUrl);
-        console.log('[ServerDetail] wsBaseUrl:', wsBaseUrl);
-        
-        ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-
-        ws.onopen = () => {
-          console.log('[ServerDetail] ✓ WebSocket connected successfully to:', wsUrl);
-          setWsConnected(true);
-          reconnectAttempts = 0; // Reset en conexión exitosa
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            // Ignorar mensajes de ping sin logging excesivo
-            if (data.type === 'ping') {
-              return;
-            }
-            console.log('[ServerDetail] WebSocket message received:', data);
-            setRealtimeMetric(data);
-          } catch (error) {
-            console.error('[ServerDetail] Error parsing WebSocket message:', error);
-            console.error('[ServerDetail] Raw message:', event.data);
-          }
-        };
-
-        ws.onerror = (error) => {
-          console.error('[ServerDetail] ✗ WebSocket error:', error);
-          console.error('[ServerDetail] Connection URL was:', wsUrl);
-          setWsConnected(false);
-        };
-
-        ws.onclose = (event) => {
-          console.log('[ServerDetail] WebSocket closed - Code:', event.code, 'Reason:', event.reason || 'No reason provided');
-          setWsConnected(false);
-          wsRef.current = null;
-          
-          // Reconexion automática con backoff exponencial suave
-          reconnectAttempts++;
-          // Primeros 3 intentos rápidos, luego más espaciados
-          let delay;
-          if (reconnectAttempts <= 3) {
-            delay = 1000; // 1 segundo para los primeros 3 intentos
-          } else {
-            delay = Math.min(2000 * Math.pow(1.3, reconnectAttempts - 4), maxReconnectDelay);
-          }
-          console.log(`[ServerDetail] Reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
-          
-          reconnectTimeout = setTimeout(() => {
-            connect();
-          }, delay);
-        };
-      } catch (error) {
-        console.error('[ServerDetail] Failed to create WebSocket:', error);
-        // Reintentar después de un segundo
-        reconnectTimeout = setTimeout(() => {
-          reconnectAttempts++;
-          connect();
-        }, 1000);
-      }
-    };
-    
-    connect();
-
-    // Cleanup al desmontar
-    return () => {
-      console.log('[ServerDetail] Cleaning up WebSocket');
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      setWsConnected(false);
-      setRealtimeMetric(null);
-    };
-  }, [server, serverId]);
 
   const loadServerData = async () => {
     try {

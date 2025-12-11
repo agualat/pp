@@ -17,12 +17,7 @@ export default function DashboardLayout({
   useEffect(() => {
     const verifyAuth = async () => {
       try {
-        const token = authService.getToken();
-        if (!token) {
-          router.push('/login');
-          return;
-        }
-
+        // La cookie se envía automáticamente con la petición
         const response = await authService.verifyToken();
         if (!response.valid) {
           router.push('/login');

@@ -15,4 +15,3 @@ ansible-runner
 paramiko
 python-dotenv
 httpx
-websockets

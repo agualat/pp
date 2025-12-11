@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from .router.ws import router as ws_router
 from .router.auth import router as auth_router
 from .router.ansible import router as ansible_router
 from .router.executions import router as executions_router
@@ -11,11 +10,7 @@ from .router.sync import router as sync_router
 from .models.models import ServerCreate
 from .utils.db import get_db
 
-# Configuración optimizada para WebSockets
-app = FastAPI(
-    # Aumentar timeouts para conexiones WebSocket
-    timeout=300,
-)
+app = FastAPI()
 
 # Middleware para logging de requests (para debugging)
 @app.middleware("http")
@@ -47,7 +42,6 @@ app.add_middleware(
 def read_root():
     return {"hello": "server"}
 
-app.include_router(ws_router)
 app.include_router(auth_router)
 app.include_router(ansible_router)
 app.include_router(executions_router)

@@ -34,8 +34,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "8000:8000"
+    # Puerto comentado - solo accesible internamente en la red Docker
+    # El frontend hace proxy a través de /api/*
+    # ports:
+    #   - "8000:8000"
     volumes:
       - ./server:/app/server  # Hot reload: montar código fuente
       - ./playbooks:/app/playbooks  # Compartir directorio de playbooks
@@ -67,6 +69,7 @@ services:
     container_name: pp_frontend
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      API_URL: http://api:8000  # URL interna para Server Components
     ports:
       - "3000:3000"
     volumes:
