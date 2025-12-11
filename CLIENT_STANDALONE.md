@@ -5,8 +5,8 @@ Este documento explica cómo instalar y configurar **solo el cliente** en un ser
 ## 📋 Requisitos Previos
 
 - Docker y Docker Compose instalados
-- Acceso de red al servidor central (puertos 8000 y 5432)
-- Permisos de sudo (para configurar NSS/PAM)
+- Acceso de red al servidor central (puerto 8000)
+- Permisos de sudo (para configurar NSS/PAM en el host)
 
 ## 🚀 Instalación Rápida
 
@@ -23,6 +23,7 @@ Copiar estos archivos desde el repositorio principal:
 - `client/` (todo el directorio)
 - `docker-compose.client.yml`
 - `.env.client` → renombrar a `.env`
+- `setup_nss_auto.sh` (para configuración de SSH)
 
 O clonar el repositorio:
 
@@ -44,24 +45,22 @@ nano .env
 **Variables críticas a configurar:**
 
 ```bash
-# IP o dominio del servidor central
-SERVER_HOST=192.168.1.100  # Cambiar por la IP real del servidor central
+# ⚠️ CAMBIAR: IP o dominio del servidor central
+SERVER_HOST=192.168.1.100  # IP/dominio del servidor central
 SERVER_PORT=8000
-
-# Conexión a la base de datos central (para sincronización inicial)
-CENTRAL_DB_HOST=192.168.1.100  # IP del servidor central
-CENTRAL_DB_PORT=5432
-CENTRAL_DB_NAME=mydb
-CENTRAL_DB_USER=postgres
-CENTRAL_DB_PASSWORD=postgres  # Usar la contraseña real
 
 # Base de datos local (dejar por defecto)
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
-POSTGRES_DB=mydb
+POSTGRES_DB=postgres
 DB_HOST=client_db
 DB_PORT=5432
 ```
+
+**Notas importantes:**
+- ❌ **Ya no se usa conexión directa a la BD central** (variables `CENTRAL_DB_*` eliminadas)
+- ✅ **Sincronización automática vía API HTTP** cuando el servidor te registra
+- ✅ **Actualizaciones en tiempo real** cuando se modifican usuarios
 
 ### 3. Iniciar el cliente
 
@@ -73,33 +72,61 @@ docker compose -f docker-compose.client.yml up -d
 docker compose up -d
 ```
 
-### 4. Verificar que está funcionando
+### 4. Registrar el cliente en el servidor central
+
+**Importante:** Los clientes ya **no se auto-registran**. Debes registrar el servidor manualmente desde el dashboard o API:
+
+#### Opción A: Desde el Dashboard (recomendado)
+1. Acceder a `http://{servidor-central}:3000/dashboard/servers`
+2. Click en "Agregar Servidor"
+3. Completar:
+   - **Nombre**: nombre descriptivo (ej: `cliente-prod-01`)
+   - **IP**: IP del servidor donde está el cliente (ej: `192.168.1.100`)
+   - **Usuario SSH**: usuario con acceso (ej: `root`)
+   - **Contraseña SSH**: contraseña temporal para desplegar clave SSH
+
+#### Opción B: Desde la API
+```bash
+curl -X POST http://{servidor-central}:8000/servers/ \
+Si quieres que los usuarios de PostgreSQL puedan hacer SSH a este servidor:
 
 ```bash
-# Ver logs
+# Desde el HOST (no desde Docker)
+sudo bash setup_nss_auto.sh
+```
+
+Este script **automáticamente**:
+- ✅ Detecta la configuración del docker-compose
+- ✅ Instala paquetes necesarios (`libnss-extrausers`, `postgresql-client`)
+- ✅ Configura NSS/PAM para autenticación con PostgreSQL
+- ✅ Crea un timer systemd para sincronizar usuarios cada 2 minutos
+- ✅ Configura SSH para usar la autenticación
+
+**Resultado:** Los usuarios pueden hacer SSH usando sus credenciales de la base de datos.
+
+```bash
+# Probar login SSH
+ssh usuario@localhost
+# Password: el configurado en la base de datos
+```
+1. ✅ El servidor sincroniza **automáticamente** todos los usuarios al cliente
+2. ✅ Futuras modificaciones de usuarios se sincronizan en **tiempo real**
+3. ✅ Los usuarios pueden hacer SSH al servidor cliente inmediatamente
+
+### 5. Verificar que está funcionando
+
+```bash
+# Ver logs del cliente
 docker compose logs -f client
 
-# Verificar que se conectó al servidor central
-docker compose logs client | grep "registered"
-
-# Verificar usuarios replicados
-docker compose exec client_db psql -U postgres -d mydb \
-  -c "SELECT username, system_uid FROM users;"
+# Verificar usuarios sincronizados
+docker compose exec client_db psql -U postgres -d postgres \
+  -c "SELECT username, system_uid FROM users ORDER BY username;"
 ```
 
-### 5. Configurar NSS/PAM (opcional, para SSH)
+### 6. Configurar NSS/PAM (para autenticación SSH)
 
 Si quieres que los usuarios puedan hacer SSH a este servidor:
-
-```bash
-# Desde el host (no desde Docker)
-sudo bash setup_auth_complete.sh
-```
-
-Esto configurará:
-- NSS (Name Service Switch) para usuarios de PostgreSQL
-- PAM (Pluggable Authentication Modules) para autenticación SSH
-- Creación automática de home directories
 
 ## 📊 Verificación
 
@@ -108,26 +135,37 @@ Esto configurará:
 ```bash
 curl http://localhost:8100/
 # Debe devolver: {"hello": "client"}
-
-# Ver métricas que se están enviando
-docker compose logs client | grep "Metric"
 ```
 
 ### Verificar usuarios sincronizados
 
 ```bash
 # Ver usuarios en la BD local
-docker compose exec client_db psql -U postgres -d mydb \
+docker compose exec client_db psql -U postgres -d postgres \
   -c "SELECT id, username, email, system_uid FROM users ORDER BY username;"
 ```
 
 ### Verificar sincronización en tiempo real
 
-En el servidor central, crear un usuario:
+**En el servidor central**, crear un usuario desde el dashboard o API:
+
+Desde el dashboard: `/dashboard/users` → "Crear Usuario"
+
+O desde la API:
 ```bash
-# En el servidor central
-curl -X POST http://localhost:8000/users/ \
+curl -X POST http://{servidor-central}:8000/users/ \
   -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "testuser", "email": "test@test.com", "password": "test123"}'
+```
+
+**En el servidor cliente**, verificar que se replicó instantáneamente:
+```bash
+docker compose exec client_db psql -U postgres -d postgres \
+  -c "SELECT username FROM users WHERE username = 'testuser';"
+```
+
+✅ Debería aparecer inmediatamente (sincronización en tiempo real vía API HTTP)H "Authorization: Bearer {token}" \
   -H "Content-Type: application/json" \
   -d '{"username": "testuser", "email": "test@test.com", "password": "test123"}'
 ```
@@ -155,27 +193,31 @@ docker compose down
 docker compose ps
 
 # Acceder a la base de datos local
-docker compose exec client_db psql -U postgres -d mydb
-
-# Forzar sincronización manual (desde el servidor central)
-curl -X POST http://{servidor-central}:8000/sync/users/manual \
-  -H "Authorization: Bearer {token}"
-```
-
-## 🔒 Seguridad en Producción
-
-### 1. Cambiar contraseñas por defecto
-
 ```bash
 # En .env
 POSTGRES_PASSWORD=contraseña_segura_aquí
-CENTRAL_DB_PASSWORD=contraseña_del_servidor_central
 ```
 
 ### 2. Firewall
 
-Asegurarse de que solo el servidor central pueda acceder al puerto 8100:
+Solo necesitas abrir el puerto 8100 para el servidor central:
 
+```bash
+# Permitir solo desde el servidor central
+sudo ufw allow from {IP_SERVIDOR_CENTRAL} to any port 8100
+
+# Puerto 5433 solo si usas NSS/PAM desde el host
+sudo ufw allow 5433/tcp
+```
+
+### 3. HTTPS (recomendado para producción)
+
+Si el servidor central usa HTTPS:
+
+```bash
+# En .env
+SERVER_HOST=https://api.ejemplo.com
+SERVER_PORT=443
 ```bash
 sudo ufw allow from {IP_SERVIDOR_CENTRAL} to any port 8100
 sudo ufw allow 5433/tcp  # Solo si necesitas NSS/PAM desde el host
@@ -197,19 +239,24 @@ SERVER_HOST=https://api.ejemplo.com
 # Verificar conectividad
 ping {IP_SERVIDOR_CENTRAL}
 curl http://{IP_SERVIDOR_CENTRAL}:8000/
-
-# Ver logs de error
-docker compose logs client | grep -i error
-```
-
 ### Los usuarios no se sincronizan
 
 ```bash
-# Verificar que el cliente esté registrado en el servidor central
-# En el servidor central:
-docker compose exec db psql -U postgres -d mydb \
-  -c "SELECT id, name, ip_address, status FROM servers;"
+# 1. Verificar que el servidor esté registrado en el central
+#    Desde el dashboard: http://{servidor-central}:3000/dashboard/servers
+#    Debe aparecer el servidor con status "online"
 
+# 2. Verificar endpoint de sincronización del cliente
+curl -X POST http://localhost:8100/api/sync/users \
+  -H "Content-Type: application/json" \
+  -d '[{"id":1,"username":"admin","email":"admin@test.com","password_hash":"$2b$12$...","is_admin":1,"is_active":1,"system_uid":2000,"system_gid":2000,"ssh_public_key":null,"created_at":"2024-01-01T00:00:00"}]'
+
+# 3. Forzar sincronización manual desde el servidor central
+#    Desde el dashboard: /dashboard/servers → botón "Sincronizar"
+#    O desde la API:
+curl -X POST http://{servidor-central}:8000/sync/users/manual \
+  -H "Authorization: Bearer {token}"
+```
 # Verificar endpoint de sincronización del cliente
 curl -X POST http://localhost:8100/api/sync/users \
   -H "Content-Type: application/json" \
@@ -220,34 +267,67 @@ curl -X POST http://localhost:8100/api/sync/users \
 
 ```bash
 # Ver logs de PostgreSQL
-docker compose logs client_db
-
-# Verificar permisos de volúmenes
-docker volume inspect pp-client_client_db_data
-
-# Recrear base de datos (⚠️ borra todos los datos)
-docker compose down -v
-docker compose up -d
-```
-
 ## 📝 Arquitectura del Cliente
 
 ```
 ┌─────────────────────┐
 │  Servidor Central   │
 │    (FastAPI)        │
+│  - Dashboard Web    │
+│  - Gestión Usuarios │
 └─────────┬───────────┘
-          │ HTTP
-          │ WebSocket (Metrics)
-          │ HTTP POST (Sync)
+          │
+          │ HTTP POST /api/sync/users
+          │ (Sincronización automática)
+          │
           ▼
     ┌─────────────┐
     │   Cliente   │
     │  (FastAPI)  │
+    │  Port: 8100 │
     └──────┬──────┘
            │
            ▼
     ┌──────────────┐
+    │  Client DB   │
+    │ (PostgreSQL) │
+    │  Port: 5433  │
+    └──────┬───────┘
+           │
+           ▼
+    ┌──────────────┐
+    │  NSS/PAM     │
+## 📚 Más Información
+
+- [README principal](README.md) - Documentación completa del sistema
+- [SETUP_SSH_AUTH.md](SETUP_SSH_AUTH.md) - Configuración detallada de SSH (legacy)
+- `setup_nss_auto.sh` - Script automatizado de configuración SSH
+- [Client README](client/README.md) - Detalles técnicos del cliente
+
+## 🔄 Cambios Recientes
+
+### ✨ Mejoras implementadas:
+- ✅ **Sincronización automática vía API**: Ya no se requiere acceso directo a la BD central
+- ✅ **Actualizaciones en tiempo real**: Los cambios se propagan instantáneamente
+- ✅ **Setup automático**: `setup_nss_auto.sh` detecta todo automáticamente
+- ✅ **Sin auto-registro**: Mayor control - debes registrar servidores manualmente
+- ❌ **WebSocket eliminado**: Las métricas ahora se integran con Grafana
+
+### 🗑️ Funcionalidades removidas:
+- Variables `CENTRAL_DB_*` (ya no se usa conexión directa a BD central)
+- Auto-registro de clientes (ahora manual desde dashboard)
+- WebSocket para métricas en tiempo real (usar Grafana)
+**Flujo de sincronización:**
+1. Modificas un usuario en el servidor central (dashboard/API)
+2. El servidor **automáticamente** envía la actualización a todos los clientes registrados
+3. El cliente recibe y actualiza su BD local
+4. NSS/PAM en el host lee la BD local cada 2 minutos
+5. Los usuarios pueden hacer SSH inmediatamente
+
+**Notas:**
+- ❌ Ya no hay WebSocket para métricas en tiempo real (usar Grafana)
+- ✅ Sincronización de usuarios es automática e instantánea vía HTTP
+- ✅ No se requiere acceso directo a la BD central ┌──────────────┐
     │  Client DB   │
     │ (PostgreSQL) │
     └──────┬───────┘

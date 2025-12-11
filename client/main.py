@@ -1,21 +1,8 @@
 from fastapi import FastAPI
-from contextlib import asynccontextmanager
-from client.utils.metrics_sender import start_sender, stop_sender
 from client.router.metrics import router as metrics_router
 from client.router.sync import router as sync_router
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup phase
-    start_sender()
-    try:
-        yield
-    finally:
-        # Shutdown phase
-        await stop_sender()
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 @app.get("/")
 def read_root():
