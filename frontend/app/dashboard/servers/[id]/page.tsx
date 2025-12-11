@@ -4,6 +4,19 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { serversService, Server, Metric } from '@/lib/services';
 
+// Tipo para métricas en tiempo real
+interface RealtimeMetric {
+  timestamp: string;
+  cpu?: any;
+  ram?: any;
+  disk?: any;
+  gpu?: any;
+  cpu_usage?: any;
+  memory_usage?: any;
+  disk_usage?: any;
+  gpu_usage?: any;
+}
+
 // Helper para formatear métricas del historial
 const formatHistoricalMetric = (value: string, type: 'cpu' | 'memory' | 'disk' | 'gpu') => {
   if (!value || value === 'N/A') return 'N/A';
@@ -179,6 +192,8 @@ export default function ServerDetailPage() {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [wsConnected, setWsConnected] = useState(false);
+  const [realtimeMetric, setRealtimeMetric] = useState<RealtimeMetric | null>(null);
 
   // Verificar que el serverId sea válido
   useEffect(() => {
@@ -200,6 +215,47 @@ export default function ServerDetailPage() {
       setServer(null);
       loadServerData();
     }
+  }, [serverId]);
+
+  // WebSocket connection for real-time metrics
+  useEffect(() => {
+    if (!serverId || isNaN(serverId)) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/ws/metrics/${serverId}`;
+    
+    console.log('[ServerDetail] Connecting to WebSocket:', wsUrl);
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      console.log('[ServerDetail] WebSocket connected');
+      setWsConnected(true);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('[ServerDetail] Received real-time metric:', data);
+        setRealtimeMetric(data);
+      } catch (error) {
+        console.error('[ServerDetail] Error parsing WebSocket message:', error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('[ServerDetail] WebSocket error:', error);
+      setWsConnected(false);
+    };
+
+    ws.onclose = () => {
+      console.log('[ServerDetail] WebSocket disconnected');
+      setWsConnected(false);
+    };
+
+    return () => {
+      console.log('[ServerDetail] Cleaning up WebSocket connection');
+      ws.close();
+    };
   }, [serverId]);
 
   const loadServerData = async () => {

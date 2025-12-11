@@ -97,9 +97,12 @@ PGPASSWORD="${NSS_DB_PASSWORD}" psql \
    WHERE is_active = 1
    ORDER BY system_uid" > "$TEMP_FILE" 2>/dev/null
 
-if [ $? -eq 0 ] && [ -s "$TEMP_FILE" ]; then
+if [ $? -eq 0 ]; then
+  # Si la query fue exitosa (aunque esté vacía), actualizar el archivo
   mv "$TEMP_FILE" "$TARGET_FILE"
   chmod 644 "$TARGET_FILE"
+  # Si está vacío, crear archivo vacío válido
+  touch "$TARGET_FILE"
 else
   rm -f "$TEMP_FILE"
   exit 1
@@ -136,10 +139,13 @@ PGPASSWORD="${NSS_DB_PASSWORD}" psql \
    WHERE is_active = 1
    ORDER BY system_uid" > "$TEMP_FILE" 2>/dev/null
 
-if [ $? -eq 0 ] && [ -s "$TEMP_FILE" ]; then
+if [ $? -eq 0 ]; then
+  # Si la query fue exitosa (aunque esté vacía), actualizar el archivo
   mv "$TEMP_FILE" "$TARGET_FILE"
   chmod 640 "$TARGET_FILE"
   chown root:shadow "$TARGET_FILE" 2>/dev/null || chown root:root "$TARGET_FILE"
+  # Si está vacío, crear archivo vacío válido
+  touch "$TARGET_FILE"
 else
   rm -f "$TEMP_FILE"
   exit 1
@@ -210,11 +216,23 @@ USER_COUNT=$(PGPASSWORD="${NSS_DB_PASSWORD}" psql -h "${DB_HOST}" -p "${DB_PORT}
 if [ "$USER_COUNT" -eq 0 ]; then
   echo "   ⚠️  No se encontraron usuarios en la base de datos local"
   echo "   💡 Asegúrate de que el server haya sincronizado usuarios al cliente"
+  echo "   📝 Creando archivos vacíos para permitir sincronización futura..."
 fi
 
-# Generar archivos iniciales
-bash /usr/local/bin/generate_passwd_from_db.sh
-bash /usr/local/bin/generate_shadow_from_db.sh
+# Generar archivos iniciales (pueden estar vacíos)
+bash /usr/local/bin/generate_passwd_from_db.sh || {
+  echo "   ⚠️  Error generando passwd, creando archivo vacío"
+  touch /etc/passwd-pgsql
+  chmod 644 /etc/passwd-pgsql
+}
+
+bash /usr/local/bin/generate_shadow_from_db.sh || {
+  echo "   ⚠️  Error generando shadow, creando archivo vacío"
+  mkdir -p /var/lib/extrausers
+  touch /var/lib/extrausers/shadow
+  chmod 640 /var/lib/extrausers/shadow
+  chown root:shadow /var/lib/extrausers/shadow 2>/dev/null || chown root:root /var/lib/extrausers/shadow
+}
 
 # Crear symlink y archivos necesarios
 ln -sf /etc/passwd-pgsql /var/lib/extrausers/passwd
