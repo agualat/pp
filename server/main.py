@@ -48,26 +48,3 @@ app.include_router(executions_router)
 app.include_router(servers_router)
 app.include_router(users_router)
 app.include_router(sync_router)
-
-# Endpoint público para auto-registro de servidores (sin autenticación)
-from .CRUD.servers import create_server, get_server_by_ip, update_server
-
-@app.post("/api/server-config/register")
-def public_register_server(
-    payload: ServerCreate,
-    db: Session = Depends(get_db)
-):
-    """Endpoint público para que los clientes se auto-registren"""
-    # Buscar si ya existe por IP
-    existing = get_server_by_ip(db, payload.ip_address)
-    
-    if existing:
-        # Actualizar información del servidor existente
-        updates = {
-            "name": payload.name,
-            "ssh_user": payload.ssh_user
-        }
-        return update_server(db, existing.id, updates)
-    
-    # Crear nuevo servidor
-    return create_server(db, payload)
