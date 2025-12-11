@@ -249,6 +249,32 @@ export default function ServerDetailPage() {
     }
   };
 
+  const handleSyncUsers = async () => {
+    if (!server) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/servers/${server.id}/sync-users`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || 'Error al sincronizar usuarios');
+      }
+
+      const data = await response.json();
+      alert(`✅ ${data.message}\n\nServidor: ${data.server_name} (${data.server_ip})`);
+      setError('');
+    } catch (error: any) {
+      console.error('Error syncing users:', error);
+      setError(error.message || 'Error al sincronizar usuarios');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -316,6 +342,9 @@ export default function ServerDetailPage() {
             </span>
           </div>
           <div className="flex space-x-3">
+            <button onClick={handleSyncUsers} className="btn btn-primary" disabled={loading}>
+              {loading ? 'Sincronizando...' : 'Sincronizar Usuarios'}
+            </button>
             <button onClick={handleToggleStatus} className="btn btn-secondary">
               Refrescar Estado
             </button>

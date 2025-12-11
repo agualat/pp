@@ -328,6 +328,33 @@ def retry_ssh_deploy(
         )
 
 
+@router.post("/{server_id}/sync-users")
+async def manual_sync_users(
+    server_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Sincroniza manualmente todos los usuarios al servidor especificado.
+    Útil para forzar sincronización o recuperar de errores.
+    """
+    # Verificar que el servidor existe
+    server = get_server_by_id(db, server_id)
+    if not server:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+    
+    # Sincronizar usuarios en background
+    background_tasks.add_task(sync_users_to_new_server, server, db)
+    
+    return {
+        "success": True,
+        "message": f"User synchronization started for server '{server.name}'",
+        "server_id": server_id,
+        "server_name": server.name,
+        "server_ip": server.ip_address
+    }
+
+
 @router.post("/bulk", response_model=List[ServerResponse])
 def bulk_create_servers(payload: List[ServerCreate], db: Session = Depends(get_db)):
     # Validar duplicados antes de crear

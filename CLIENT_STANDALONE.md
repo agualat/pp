@@ -42,25 +42,23 @@ cp .env.client .env
 nano .env
 ```
 
-**Variables críticas a configurar:**
+**Variables a configurar:**
 
 ```bash
-# ⚠️ CAMBIAR: IP o dominio del servidor central
-SERVER_HOST=192.168.1.100  # IP/dominio del servidor central
-SERVER_PORT=8000
-
-# Base de datos local (dejar por defecto)
+# Base de datos local (opcionalmente cambiar la contraseña)
 POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
+POSTGRES_PASSWORD=postgres  # ⚠️ Cambiar en producción
 POSTGRES_DB=postgres
-DB_HOST=client_db
-DB_PORT=5432
+
+# Modo de desarrollo (opcional)
+DEV_MODE=false
 ```
 
 **Notas importantes:**
-- ❌ **Ya no se usa conexión directa a la BD central** (variables `CENTRAL_DB_*` eliminadas)
-- ✅ **Sincronización automática vía API HTTP** cuando el servidor te registra
+- ✅ **Configuración mínima**: Solo necesitas configurar la base de datos local
+- ✅ **Sincronización automática vía API HTTP** cuando registras el servidor desde el dashboard
 - ✅ **Actualizaciones en tiempo real** cuando se modifican usuarios
+- ❌ **Ya no se necesitan** variables `SERVER_HOST`, `SERVER_PORT`, `CENTRAL_DB_*` (eliminadas)
 
 ### 3. Iniciar el cliente
 
@@ -210,25 +208,13 @@ sudo ufw allow from {IP_SERVIDOR_CENTRAL} to any port 8100
 sudo ufw allow 5433/tcp
 ```
 
-### 3. HTTPS (recomendado para producción)
+### 3. SSL/TLS (opcional)
 
-Si el servidor central usa HTTPS:
-
-```bash
-# En .env
-SERVER_HOST=https://api.ejemplo.com
-SERVER_PORT=443
+La comunicación entre el servidor central y el cliente se realiza vía HTTP POST.
+Si necesitas HTTPS, configura un reverse proxy (nginx/traefik) en el servidor central.
 ```bash
 sudo ufw allow from {IP_SERVIDOR_CENTRAL} to any port 8100
 sudo ufw allow 5433/tcp  # Solo si necesitas NSS/PAM desde el host
-```
-
-### 3. SSL/TLS (recomendado)
-
-Para producción, configurar HTTPS en el servidor central y actualizar:
-
-```bash
-SERVER_HOST=https://api.ejemplo.com
 ```
 
 ## 🐛 Troubleshooting
@@ -307,16 +293,18 @@ curl -X POST http://localhost:8100/api/sync/users \
 ## 🔄 Cambios Recientes
 
 ### ✨ Mejoras implementadas:
+- ✅ **Configuración simplificada**: Solo necesitas configurar la BD local
 - ✅ **Sincronización automática vía API**: Ya no se requiere acceso directo a la BD central
 - ✅ **Actualizaciones en tiempo real**: Los cambios se propagan instantáneamente
 - ✅ **Setup automático**: `setup_nss_auto.sh` detecta todo automáticamente
+- ✅ **Inicialización automática**: La tabla `users` se crea automáticamente al iniciar
 - ✅ **Sin auto-registro**: Mayor control - debes registrar servidores manualmente
-- ❌ **WebSocket eliminado**: Las métricas ahora se integran con Grafana
 
 ### 🗑️ Funcionalidades removidas:
+- Variables `SERVER_HOST`, `SERVER_PORT`, `METRIC_INTERVAL` (ya no se usan)
 - Variables `CENTRAL_DB_*` (ya no se usa conexión directa a BD central)
 - Auto-registro de clientes (ahora manual desde dashboard)
-- WebSocket para métricas en tiempo real (usar Grafana)
+- WebSocket para métricas en tiempo real (integración con Grafana pendiente)
 **Flujo de sincronización:**
 1. Modificas un usuario en el servidor central (dashboard/API)
 2. El servidor **automáticamente** envía la actualización a todos los clientes registrados
