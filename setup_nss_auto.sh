@@ -35,10 +35,15 @@ export DB_NAME="${DB_NAME:-postgres}"
 export NSS_DB_USER="${NSS_DB_USER:-postgres}"
 export NSS_DB_PASSWORD="${NSS_DB_PASSWORD:-postgres}"
 
+# URL del servidor central para sincronización de contraseñas
+# IMPORTANTE: Cambiar esto a la URL real del servidor central
+export SERVER_URL="${SERVER_URL:-http://localhost:8000}"
+
 echo "   DB_HOST: $DB_HOST"
 echo "   DB_PORT: $DB_PORT"
 echo "   DB_NAME: $DB_NAME"
 echo "   DB_USER: $NSS_DB_USER"
+echo "   SERVER_URL: $SERVER_URL"
 echo ""
 
 # Verificar conexión a la base de datos
@@ -66,6 +71,7 @@ DB_PORT=$DB_PORT
 DB_NAME=$DB_NAME
 NSS_DB_USER=$NSS_DB_USER
 NSS_DB_PASSWORD=$NSS_DB_PASSWORD
+SERVER_URL=$SERVER_URL
 EOF
 chmod 600 /etc/default/sssd-pgsql
 echo "   ✅ /etc/default/sssd-pgsql creado"
@@ -297,7 +303,22 @@ systemctl start pgsql-users-sync.timer
 
 echo "   ✅ Timer systemd configurado y activo"
 
-# 9. Configurar SSH para usar PAM
+# 9. Instalar script de sincronización de contraseñas
+echo "🔄 Instalando sincronización de cambios de contraseña..."
+cp client/utils/sync_password_change.sh /usr/local/bin/sync_password_change.sh
+chmod 755 /usr/local/bin/sync_password_change.sh
+touch /var/log/password_sync.log
+chmod 666 /var/log/password_sync.log
+
+# Agregar hook PAM para capturar cambios de contraseña
+if ! grep -q "sync_password_change.sh" /etc/pam.d/common-password; then
+  echo "password    optional    pam_exec.so quiet /usr/local/bin/sync_password_change.sh" >> /etc/pam.d/common-password
+  echo "   ✅ Hook PAM para sincronización de contraseñas instalado"
+else
+  echo "   ℹ️  Hook PAM ya estaba configurado"
+fi
+
+# 10. Configurar SSH para usar PAM
 echo "🔐 [8/8] Configurando SSH..."
 if [ -f /etc/ssh/sshd_config ]; then
   # Backup

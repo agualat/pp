@@ -31,6 +31,7 @@ def ensure_tables_exist(conn):
                 password_hash VARCHAR NOT NULL,
                 is_admin INTEGER DEFAULT 0,
                 is_active INTEGER DEFAULT 1,
+                must_change_password INTEGER DEFAULT 0,
                 system_uid INTEGER UNIQUE NOT NULL,
                 system_gid INTEGER DEFAULT 2000,
                 ssh_public_key VARCHAR,
@@ -64,10 +65,17 @@ class UserSync(BaseModel):
     password_hash: str
     is_admin: int
     is_active: int
+    must_change_password: int = 0
     system_uid: int
     system_gid: int
     ssh_public_key: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+class SyncRequest(BaseModel):
+    """Request de sincronización con metadatos"""
+    server_url: Optional[str] = None  # URL del servidor central
+    users: List[UserSync]
 
 
 class SyncResponse(BaseModel):
@@ -92,18 +100,52 @@ def get_db_connection():
 
 
 @router.post("/users", response_model=SyncResponse)
-async def sync_users(users: List[UserSync]):
+async def sync_users(sync_data: SyncRequest):
     """
     Sincroniza la lista completa de usuarios desde el servidor central.
+    También guarda la URL del servidor para sincronización de contraseñas.
     
     Este endpoint:
     1. Verifica que las tablas existan (las crea si es necesario)
-    2. Recibe la lista completa de usuarios desde el servidor central
-    3. Actualiza o crea usuarios en la base de datos local
-    4. Elimina usuarios que ya no existen en el servidor central
-    5. Mantiene la base de datos local sincronizada
-    6. Regenera archivos NSS/PAM para autenticación SSH
+    2. Guarda la URL del servidor central en /etc/default/sssd-pgsql
+    3. Recibe la lista completa de usuarios desde el servidor central
+    4. Actualiza o crea usuarios en la base de datos local
+    5. Elimina usuarios que ya no existen en el servidor central
+    6. Mantiene la base de datos local sincronizada
+    7. Regenera archivos NSS/PAM para autenticación SSH
     """
+    users = sync_data.users
+    
+    # Guardar SERVER_URL si fue proporcionado
+    if sync_data.server_url:
+        try:
+            config_file = "/etc/default/sssd-pgsql"
+            config_lines = []
+            server_url_exists = False
+            
+            # Leer configuración existente si existe
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    for line in f:
+                        if line.startswith('SERVER_URL='):
+                            config_lines.append(f'SERVER_URL={sync_data.server_url}\n')
+                            server_url_exists = True
+                        else:
+                            config_lines.append(line)
+            
+            # Si no existe la línea, agregarla
+            if not server_url_exists:
+                config_lines.append(f'SERVER_URL={sync_data.server_url}\n')
+            
+            # Escribir configuración actualizada
+            with open(config_file, 'w') as f:
+                f.writelines(config_lines)
+            
+            print(f"✅ SERVER_URL auto-configurado: {sync_data.server_url}")
+        except Exception as e:
+            print(f"⚠️  No se pudo auto-configurar SERVER_URL: {str(e)}")
+            # No fallar la sincronización por esto
+    
     conn = None
     try:
         # Conectar a la base de datos
@@ -177,6 +219,7 @@ async def sync_users(users: List[UserSync]):
                                 password_hash = %s, 
                                 is_admin = %s, 
                                 is_active = %s, 
+                                must_change_password = %s,
                                 system_uid = %s, 
                                 system_gid = %s, 
                                 ssh_public_key = %s,
@@ -188,6 +231,7 @@ async def sync_users(users: List[UserSync]):
                             user.password_hash,
                             user.is_admin,
                             user.is_active,
+                            user.must_change_password,
                             user.system_uid,
                             user.system_gid,
                             user.ssh_public_key,
@@ -205,8 +249,8 @@ async def sync_users(users: List[UserSync]):
                         cur.execute("""
                             INSERT INTO users 
                             (id, username, email, password_hash, is_admin, is_active, 
-                             system_uid, system_gid, ssh_public_key, created_at)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             must_change_password, system_uid, system_gid, ssh_public_key, created_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """, (
                             user.id,
                             user.username,
@@ -214,6 +258,7 @@ async def sync_users(users: List[UserSync]):
                             user.password_hash,
                             user.is_admin,
                             user.is_active,
+                            user.must_change_password,
                             user.system_uid,
                             user.system_gid,
                             user.ssh_public_key,

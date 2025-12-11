@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from ..utils.db import get_db
-from ..utils.auth import authenticate_user, get_user_from_token, hash_password
+from ..utils.auth import authenticate_user, get_user_from_token, hash_password, verify_password
 from ..CRUD.users import create_user
 from ..models.models import (
     User,
@@ -10,6 +10,7 @@ from ..models.models import (
     LoginRequest,
     TokenResponse,
     VerifyTokenResponse,
+    ChangePasswordRequest,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -58,7 +59,11 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     token = authenticate_user(db, payload.username, payload.password)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    return TokenResponse(access_token=token)
+    
+    # Verificar si debe cambiar contraseña
+    must_change = getattr(user, "must_change_password", 0)
+    
+    return TokenResponse(access_token=token, must_change_password=must_change)
 
 
 @router.get("/verify", response_model=VerifyTokenResponse)
@@ -72,3 +77,56 @@ def verify(authorization: str | None = Header(default=None), db: Session = Depen
     if not user:
         return VerifyTokenResponse(valid=False)
     return VerifyTokenResponse(valid=True, user_id=user.id, username=user.username)
+
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para cambiar la contraseña del usuario autenticado.
+    Si el usuario tiene must_change_password=1, este será su único endpoint accesible
+    hasta que cambie su contraseña.
+    """
+    # Validar token
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+    
+    token = authorization.split(" ", 1)[1]
+    user = get_user_from_token(db, token)
+    
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    
+    # Verificar contraseña actual
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    
+    # Validar nueva contraseña (mínimo 6 caracteres)
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 6 characters")
+    
+    # Verificar que la nueva contraseña sea diferente
+    if verify_password(payload.new_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be different from current password")
+    
+    # Actualizar contraseña
+    user.password_hash = hash_password(payload.new_password)
+    user.must_change_password = 0  # Desmarcar flag de cambio obligatorio
+    
+    db.commit()
+    db.refresh(user)
+    
+    # Sincronizar usuarios a todos los clientes
+    try:
+        from ..utils.user_sync import trigger_user_sync
+        trigger_user_sync()
+    except Exception as e:
+        print(f"⚠️  Warning: Could not trigger user sync after password change: {e}")
+    
+    return {
+        "success": True,
+        "message": "Password changed successfully"
+    }

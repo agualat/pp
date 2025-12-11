@@ -1,14 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Header
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 import csv
 import io
 import re
+import bcrypt
 
 from ..utils.db import get_db
 from .auth import get_current_staff_user
 from ..models.models import User, UserCreate, UserResponse
+from ..models.password_models import PasswordChangeFromClient
 from ..CRUD.users import (
     get_all_users,
     get_user_by_id,
@@ -254,6 +256,12 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
                         is_active=1
                     )
                     new_user = create_user(db, user_data, auto_sync=False)  # No sincronizar individualmente
+                    
+                    # Marcar que debe cambiar contraseña en el primer login
+                    new_user.must_change_password = 1
+                    db.commit()
+                    db.refresh(new_user)
+                    
                     users_created.append({
                         "id": new_user.id,
                         "username": new_user.username,
@@ -304,6 +312,12 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
                         is_active=1
                     )
                     new_user = create_user(db, user_data, auto_sync=False)  # No sincronizar individualmente
+                    
+                    # Marcar que debe cambiar contraseña en el primer login
+                    new_user.must_change_password = 1
+                    db.commit()
+                    db.refresh(new_user)
+                    
                     users_created.append({
                         "id": new_user.id,
                         "username": new_user.username,
@@ -334,3 +348,47 @@ async def bulk_upload_users(file: UploadFile = File(...), db: Session = Depends(
         "email_domain": "@estud.usfq.edu.ec",
         "synced_to_clients": True if users_created else False
     }
+
+
+@router.post("/{username}/change-password-from-client")
+def change_password_from_client(
+    username: str,
+    password_data: PasswordChangeFromClient,
+    x_client_host: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para recibir cambios de contraseña desde los clientes.
+    Se llama cuando un usuario cambia su contraseña vía SSH/passwd en un cliente.
+    """
+    # Buscar el usuario
+    user = get_user_by_username(db, username)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User '{username}' not found"
+        )
+    
+    # Hashear la nueva contraseña
+    hashed_password = bcrypt.hashpw(
+        password_data.new_password.encode('utf-8'),
+        bcrypt.gensalt()
+    ).decode('utf-8')
+    
+    # Actualizar contraseña en la base de datos central
+    user.password_hash = hashed_password
+    user.must_change_password = 0  # Ya cambió la contraseña
+    db.commit()
+    db.refresh(user)
+    
+    # Sincronizar con todos los clientes
+    _trigger_user_sync(db)
+    
+    return {
+        "success": True,
+        "message": f"Password updated for user '{username}' and synced to all clients",
+        "username": username,
+        "source_client": x_client_host,
+        "must_change_password": False
+    }
+

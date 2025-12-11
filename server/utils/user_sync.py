@@ -6,6 +6,7 @@ from typing import List
 import httpx
 import asyncio
 import logging
+import os
 from ..models.models import User, Server
 from ..CRUD.servers import get_all_servers
 from ..CRUD.users import get_all_users
@@ -13,7 +14,7 @@ from ..CRUD.users import get_all_users
 logger = logging.getLogger(__name__)
 
 
-async def sync_users_to_client(client_url: str, users_data: List[dict], server_name: str = "Unknown") -> dict:
+async def sync_users_to_client(client_url: str, users_data: List[dict], server_name: str = "Unknown", server_url: str = None) -> dict:
     """
     Envía la lista de usuarios a un cliente específico
     
@@ -21,15 +22,23 @@ async def sync_users_to_client(client_url: str, users_data: List[dict], server_n
         client_url: URL base del cliente (http://ip:puerto)
         users_data: Lista de usuarios serializados
         server_name: Nombre del servidor para logging
+        server_url: URL del servidor central para que el cliente la guarde automáticamente
     
     Returns:
         dict con el resultado de la sincronización
     """
     try:
+        # Preparar payload con metadatos
+        payload = {
+            "users": users_data
+        }
+        if server_url:
+            payload["server_url"] = server_url
+        
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
                 f"{client_url}/api/sync/users",
-                json=users_data
+                json=payload
             )
             response.raise_for_status()
             result = response.json()
@@ -96,12 +105,16 @@ async def sync_users_to_all_clients(db: Session) -> dict:
     
     logger.info(f"🔄 Starting user sync: {len(users)} users to {len(online_servers)} online clients")
     
+    # Obtener URL del servidor central desde variable de entorno
+    # Esta URL será enviada a los clientes para que sepan dónde enviar updates de contraseña
+    server_url = os.getenv("SERVER_URL", os.getenv("PUBLIC_URL", "http://localhost:8000"))
+    
     # Crear tareas asíncronas para sincronizar con todos los clientes
     # Asumimos que los clientes corren en el puerto 8100 (configurable)
     tasks = []
     for server in online_servers:
         client_url = f"http://{server.ip_address}:8100"
-        tasks.append(sync_users_to_client(client_url, users_data, server.name))
+        tasks.append(sync_users_to_client(client_url, users_data, server.name, server_url))
     
     # Ejecutar todas las sincronizaciones en paralelo
     results = await asyncio.gather(*tasks, return_exceptions=True)
