@@ -1,0 +1,493 @@
+from typing import List, Optional
+
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
+
+from ..models.models import Container, ContainerCreate, Server
+from ..utils.docker_remote import (
+    DockerConnectionError,
+    DockerContainerNotFoundError,
+    DockerImageNotFoundError,
+    DockerPortConflictError,
+    DockerRemoteError,
+    DockerRemoteManager,
+)
+from ..utils.docker_validators import (
+    DockerValidationError,
+    validate_container_name,
+    validate_image_name,
+    validate_ports,
+)
+
+
+def create_container(
+    db: Session, container_data: ContainerCreate, user_id: int
+) -> Container:
+    """Crea un nuevo contenedor"""
+    container = Container(
+        name=container_data.name,
+        user_id=user_id,
+        server_id=container_data.server_id,
+        image=container_data.image,
+        ports=container_data.ports,
+        status="stopped",
+        is_public=False,
+    )
+    db.add(container)
+    db.commit()
+    db.refresh(container)
+    return container
+
+
+def get_container_by_id(db: Session, container_id: int) -> Optional[Container]:
+    """Obtiene un contenedor por ID"""
+    return db.query(Container).filter(Container.id == container_id).first()
+
+
+def get_containers_by_user(db: Session, user_id: int) -> List[Container]:
+    """Obtiene todos los contenedores de un usuario"""
+    return db.query(Container).filter(Container.user_id == user_id).all()
+
+
+def get_public_containers(db: Session) -> List[Container]:
+    """Obtiene todos los contenedores públicos"""
+    return db.query(Container).filter(Container.is_public == True).all()
+
+
+def get_all_containers(
+    db: Session,
+    server_id: Optional[int] = None,
+    user_id: Optional[int] = None,
+    status: Optional[str] = None,
+    is_public: Optional[bool] = None,
+) -> List[Container]:
+    """Obtiene todos los contenedores con filtros opcionales"""
+    query = db.query(Container)
+
+    filters = []
+
+    if server_id is not None:
+        filters.append(Container.server_id == server_id)
+
+    if user_id is not None:
+        filters.append(Container.user_id == user_id)
+
+    if status is not None:
+        filters.append(Container.status == status)
+
+    if is_public is not None:
+        filters.append(Container.is_public == is_public)
+
+    if filters:
+        query = query.filter(and_(*filters))
+
+    return query.all()
+
+
+def get_containers_by_server(db: Session, server_id: int) -> List[Container]:
+    """Obtiene todos los contenedores de un servidor"""
+    return db.query(Container).filter(Container.server_id == server_id).all()
+
+
+def get_user_container_on_server(
+    db: Session, user_id: int, server_id: int
+) -> Optional[Container]:
+    """Obtiene el contenedor de un usuario en un servidor específico"""
+    return (
+        db.query(Container)
+        .filter(Container.user_id == user_id, Container.server_id == server_id)
+        .first()
+    )
+
+
+def count_user_containers_on_server(db: Session, user_id: int, server_id: int) -> int:
+    """Cuenta cuántos contenedores tiene un usuario en un servidor"""
+    return (
+        db.query(Container)
+        .filter(Container.user_id == user_id, Container.server_id == server_id)
+        .count()
+    )
+
+
+def update_container_status(
+    db: Session, container_id: int, status: str
+) -> Optional[Container]:
+    """Actualiza el estado de un contenedor"""
+    container = get_container_by_id(db, container_id)
+    if container:
+        container.status = status
+        db.commit()
+        db.refresh(container)
+    return container
+
+
+def update_container_docker_id(
+    db: Session, container_id: int, docker_id: str
+) -> Optional[Container]:
+    """Actualiza el Docker container ID"""
+    container = get_container_by_id(db, container_id)
+    if container:
+        container.container_id = docker_id
+        db.commit()
+        db.refresh(container)
+    return container
+
+
+def delete_container(db: Session, container_id: int) -> bool:
+    """Elimina un contenedor"""
+    container = get_container_by_id(db, container_id)
+    if container:
+        db.delete(container)
+        db.commit()
+        return True
+    return False
+
+
+def toggle_container_public(db: Session, container_id: int) -> Optional[Container]:
+    """Cambia el estado público/privado de un contenedor"""
+    container = get_container_by_id(db, container_id)
+    if container:
+        container.is_public = not container.is_public
+        db.commit()
+        db.refresh(container)
+    return container
+
+
+# ============================================================================
+# FUNCIONES CON INTEGRACIÓN DOCKER
+# ============================================================================
+
+
+def create_container_with_docker(
+    db: Session, server: Server, user_id: int, container_data: ContainerCreate
+) -> Container:
+    """
+    Crea un contenedor en la BD y en Docker.
+
+    Args:
+        db: Database session
+        server: Servidor donde crear el contenedor
+        user_id: ID del usuario propietario
+        container_data: Datos del contenedor
+
+    Returns:
+        Container creado
+
+    Raises:
+        DockerValidationError: Si los datos son inválidos
+        DockerConnectionError: Si no se puede conectar al servidor
+        DockerImageNotFoundError: Si la imagen no existe
+        DockerPortConflictError: Si hay conflicto de puertos
+        DockerRemoteError: Otros errores de Docker
+    """
+    # Validar datos
+    validate_container_name(container_data.name)
+    validate_image_name(container_data.image)
+    if container_data.ports:
+        validate_ports(container_data.ports)
+
+    # Crear registro en BD con estado "creating"
+    container = Container(
+        name=container_data.name,
+        user_id=user_id,
+        server_id=container_data.server_id,
+        image=container_data.image,
+        ports=container_data.ports,
+        status="creating",
+        is_public=False,
+    )
+    db.add(container)
+    db.commit()
+    db.refresh(container)
+
+    try:
+        # Conectar con Docker en el servidor remoto
+        with DockerRemoteManager(server) as docker:
+            # Crear contenedor en Docker
+            docker_id = docker.create_container(
+                name=container_data.name,
+                image=container_data.image,
+                ports=container_data.ports,
+                restart_policy="unless-stopped",
+            )
+
+            # Actualizar container_id y status en BD
+            container.container_id = docker_id
+            container.status = "running"  # Docker run -d ya lo inicia
+            db.commit()
+            db.refresh(container)
+
+            print(
+                f"✓ Container created successfully: {container.name} (ID: {docker_id[:12]})"
+            )
+            return container
+
+    except (DockerImageNotFoundError, DockerPortConflictError, DockerRemoteError) as e:
+        # Si falla Docker, marcar como error en BD
+        container.status = "error"
+        db.commit()
+        raise
+    except Exception as e:
+        # Error inesperado
+        container.status = "error"
+        db.commit()
+        raise DockerRemoteError(f"Unexpected error creating container: {e}")
+
+
+def start_container_with_docker(
+    db: Session, server: Server, container: Container
+) -> Container:
+    """
+    Inicia un contenedor en Docker y actualiza BD.
+
+    Args:
+        db: Database session
+        server: Servidor del contenedor
+        container: Container a iniciar
+
+    Returns:
+        Container actualizado
+
+    Raises:
+        DockerConnectionError: Si no se puede conectar
+        DockerContainerNotFoundError: Si el contenedor no existe en Docker
+        DockerRemoteError: Otros errores
+    """
+    if not container.container_id:
+        raise DockerRemoteError("Container has no Docker ID. Cannot start.")
+
+    try:
+        with DockerRemoteManager(server) as docker:
+            # Iniciar contenedor
+            docker.start_container(container.container_id)
+
+            # Actualizar status en BD
+            container.status = "running"
+            db.commit()
+            db.refresh(container)
+
+            print(f"✓ Container started: {container.name}")
+            return container
+
+    except DockerContainerNotFoundError:
+        # Contenedor no existe en Docker, marcar como error
+        container.status = "error"
+        db.commit()
+        raise
+    except Exception as e:
+        container.status = "error"
+        db.commit()
+        raise DockerRemoteError(f"Error starting container: {e}")
+
+
+def stop_container_with_docker(
+    db: Session, server: Server, container: Container
+) -> Container:
+    """
+    Detiene un contenedor en Docker y actualiza BD.
+
+    Args:
+        db: Database session
+        server: Servidor del contenedor
+        container: Container a detener
+
+    Returns:
+        Container actualizado
+
+    Raises:
+        DockerConnectionError: Si no se puede conectar
+        DockerContainerNotFoundError: Si el contenedor no existe
+        DockerRemoteError: Otros errores
+    """
+    if not container.container_id:
+        raise DockerRemoteError("Container has no Docker ID. Cannot stop.")
+
+    try:
+        with DockerRemoteManager(server) as docker:
+            # Detener contenedor
+            docker.stop_container(container.container_id, timeout=10)
+
+            # Actualizar status en BD
+            container.status = "stopped"
+            db.commit()
+            db.refresh(container)
+
+            print(f"✓ Container stopped: {container.name}")
+            return container
+
+    except DockerContainerNotFoundError:
+        # Contenedor no existe, marcar como stopped de todas formas
+        container.status = "stopped"
+        db.commit()
+        raise
+    except Exception as e:
+        raise DockerRemoteError(f"Error stopping container: {e}")
+
+
+def delete_container_with_docker(
+    db: Session, server: Server, container: Container
+) -> bool:
+    """
+    Elimina un contenedor de Docker y BD.
+
+    Args:
+        db: Database session
+        server: Servidor del contenedor
+        container: Container a eliminar
+
+    Returns:
+        True si se eliminó correctamente
+
+    Raises:
+        DockerConnectionError: Si no se puede conectar
+        DockerRemoteError: Otros errores
+    """
+    # Si tiene container_id, intentar eliminar de Docker
+    if container.container_id:
+        try:
+            with DockerRemoteManager(server) as docker:
+                # Eliminar contenedor (force=True para eliminar aunque esté corriendo)
+                docker.remove_container(container.container_id, force=True)
+                print(f"✓ Container removed from Docker: {container.name}")
+        except DockerContainerNotFoundError:
+            # Ya no existe en Docker, continuar con eliminación de BD
+            print(
+                f"⚠ Container not found in Docker, removing from DB: {container.name}"
+            )
+        except Exception as e:
+            # Error al eliminar de Docker, pero intentar eliminar de BD de todas formas
+            print(f"⚠ Error removing from Docker: {e}")
+
+    # Eliminar de BD
+    db.delete(container)
+    db.commit()
+    print(f"✓ Container removed from database: {container.name}")
+    return True
+
+
+def sync_container_status(
+    db: Session, server: Server, container: Container
+) -> Container:
+    """
+    Sincroniza el estado del contenedor desde Docker a la BD.
+
+    Args:
+        db: Database session
+        server: Servidor del contenedor
+        container: Container a sincronizar
+
+    Returns:
+        Container actualizado
+    """
+    if not container.container_id:
+        return container
+
+    try:
+        with DockerRemoteManager(server) as docker:
+            status_info = docker.get_container_status(container.container_id)
+
+            # Mapear estado de Docker a nuestro formato
+            docker_status = status_info.get("status", "unknown")
+
+            if status_info.get("running"):
+                container.status = "running"
+            elif docker_status in ["exited", "stopped"]:
+                container.status = "stopped"
+            elif docker_status == "created":
+                container.status = "stopped"
+            else:
+                container.status = "error"
+
+            db.commit()
+            db.refresh(container)
+
+    except DockerContainerNotFoundError:
+        # Contenedor no existe en Docker
+        container.status = "error"
+        db.commit()
+    except Exception as e:
+        print(f"⚠ Error syncing container status: {e}")
+
+    return container
+
+
+def create_colab_container_with_docker(
+    db: Session,
+    server: Server,
+    user_id: int,
+    username: str,
+    container_name: Optional[str] = None,
+) -> Container:
+    """
+    Crea un contenedor Colab con configuración GPU especial.
+
+    Args:
+        db: Database session
+        server: Servidor donde crear el contenedor
+        user_id: ID del usuario propietario
+        username: Username del sistema para mapeo de volúmenes
+        container_name: Nombre opcional del contenedor (default: colab_{username})
+
+    Returns:
+        Container creado
+
+    Raises:
+        DockerConnectionError: Si no se puede conectar al servidor
+        DockerImageNotFoundError: Si la imagen no existe
+        DockerRemoteError: Otros errores de Docker
+    """
+    if not container_name:
+        container_name = f"colab_{username}"
+
+    # Crear registro en BD con estado "creating"
+    container = Container(
+        name=container_name,
+        user_id=user_id,
+        server_id=server.id,
+        image="us-docker.pkg.dev/colab-images/public/runtime:latest",
+        ports=None,  # Los puertos son aleatorios con -P
+        status="creating",
+        is_public=False,
+    )
+    db.add(container)
+    db.commit()
+    db.refresh(container)
+
+    try:
+        # Conectar con Docker en el servidor remoto
+        with DockerRemoteManager(server) as docker:
+            # Crear contenedor Colab en Docker
+            docker_id, port_mappings = docker.create_colab_container(
+                username=username,
+                container_name=container_name,
+            )
+
+            # Formatear puertos para almacenar en BD
+            if port_mappings:
+                ports_str = ", ".join(
+                    [f"{host}:{cont}" for cont, host in port_mappings.items()]
+                )
+                container.ports = ports_str
+
+            # Actualizar container_id y status en BD
+            container.container_id = docker_id
+            container.status = "running"  # Colab container se inicia automáticamente
+            db.commit()
+            db.refresh(container)
+
+            print(
+                f"✓ Colab container created successfully: {container.name} (ID: {docker_id[:12]})"
+            )
+            print(f"✓ Port mappings: {port_mappings}")
+            return container
+
+    except (DockerImageNotFoundError, DockerRemoteError) as e:
+        # Si falla Docker, marcar como error en BD
+        container.status = "error"
+        db.commit()
+        raise
+    except Exception as e:
+        # Error inesperado
+        container.status = "error"
+        db.commit()
+        raise DockerRemoteError(f"Unexpected error creating Colab container: {e}")

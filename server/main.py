@@ -1,16 +1,19 @@
-from fastapi import FastAPI, Depends, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from .router.auth import router as auth_router
+
+from .models.models import ServerCreate
 from .router.ansible import router as ansible_router
+from .router.auth import router as auth_router
+from .router.containers import router as containers_router
 from .router.executions import router as executions_router
 from .router.servers import router as servers_router
-from .router.users import router as users_router
 from .router.sync import router as sync_router
-from .models.models import ServerCreate
+from .router.users import router as users_router
 from .utils.db import get_db
 
 app = FastAPI()
+
 
 # Middleware para logging de requests (para debugging)
 @app.middleware("http")
@@ -20,6 +23,7 @@ async def log_requests(request: Request, call_next):
     response = await call_next(request)
     print(f"[RESPONSE] Status: {response.status_code}")
     return response
+
 
 # Configurar CORS - IMPORTANTE: debe ir ANTES de incluir routers
 # Para desarrollo: permitir orígenes específicos con credenciales
@@ -38,9 +42,11 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+
 @app.get("/")
 def read_root():
     return {"hello": "server"}
+
 
 app.include_router(auth_router)
 app.include_router(ansible_router)
@@ -48,3 +54,4 @@ app.include_router(executions_router)
 app.include_router(servers_router)
 app.include_router(users_router)
 app.include_router(sync_router)
+app.include_router(containers_router)

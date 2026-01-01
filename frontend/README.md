@@ -2,6 +2,34 @@
 
 Dashboard web construido con Next.js 14, React y Tailwind CSS para gestión de infraestructura.
 
+## 🎨 CSS Organization
+
+This project uses a **centralized CSS system** for consistent, maintainable styling.
+
+**📖 Start Here:** [CSS Master Index](CSS_INDEX.md) - Your navigation hub for all CSS documentation
+
+### Quick Links
+- **[Quick Reference](CSS_QUICK_REFERENCE.md)** - Cheat sheet for daily use
+- **[Complete Guide](CSS_GUIDE.md)** - Full documentation of all classes
+- **[Migration Guide](MIGRATION_GUIDE.md)** - How to update existing components
+- **[Organization Summary](CSS_ORGANIZATION_SUMMARY.md)** - Overview of the system
+
+### Quick Start
+```tsx
+// Import utilities
+import { cn, getStatusBadgeClass } from '@/lib/styles';
+
+// Use centralized classes
+<button className="btn btn-primary">Save</button>
+<span className={cn('badge', `status-${state}`)}>Status</span>
+<div className="card">
+  <h2 className="card-header">Title</h2>
+  <div className="card-body">Content</div>
+</div>
+```
+
+All CSS classes are defined in `app/globals.css` with helper functions in `lib/styles/`.
+
 ## Características
 
 - 🎨 UI moderna con Tailwind CSS
@@ -42,4 +70,7 @@ npm run build
 npm start
 ```
 
-Ver documentación completa en el [README principal](../README.md)
+## Documentación
+
+- **CSS System**: Ver [CSS_INDEX.md](CSS_INDEX.md) para documentación completa de estilos
+- **Proyecto**: Ver [README principal](../README.md) para documentación general

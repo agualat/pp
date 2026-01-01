@@ -1,0 +1,18 @@
+---
+- name: Actualizar repositorio con git pull
+  hosts: all
+  become: true
+
+  vars:
+    repo_path: /pp
+    repo_url: https://github.com/agualat/pp.git
+    repo_branch: main
+
+  tasks:
+    - name: Hacer git pull del repositorio
+      ansible.builtin.git:
+        repo: "{{ repo_url }}"
+        dest: "{{ repo_path }}"
+        version: "{{ repo_branch }}"
+        update: yes
+        force: yes

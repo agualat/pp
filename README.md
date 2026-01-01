@@ -290,11 +290,53 @@ sudo systemctl status pgsql-users-sync.timer
 getent passwd  # Ver usuarios disponibles
 ```
 
+## 🗑️ Soft Delete de Playbooks
+
+El sistema implementa **soft delete** para playbooks de Ansible, permitiendo eliminar playbooks sin perder el historial de ejecuciones.
+
+### Características
+
+- ✅ **Historial preservado**: Las ejecuciones se mantienen intactas
+- ✅ **Recuperación**: Playbooks eliminados pueden restaurarse
+- ✅ **Auditoría**: Registro de cuándo y qué se eliminó
+- ✅ **Integridad**: No rompe relaciones con ejecuciones
+
+### Aplicar Migración
+
+```bash
+# Aplicar cambios en la base de datos
+./apply_soft_delete_migration.sh
+```
+
+### Nuevos Endpoints
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| DELETE | `/ansible/playbooks/{id}` | Soft delete de playbook |
+| GET | `/ansible/playbooks/deleted` | Listar playbooks eliminados |
+| POST | `/ansible/playbooks/{id}/restore` | Restaurar playbook |
+
+### Uso en Frontend
+
+```typescript
+// Eliminar playbook (soft delete)
+await fetch(`/api/ansible/playbooks/${id}`, { method: 'DELETE' });
+
+// Listar eliminados
+const deleted = await fetch('/api/ansible/playbooks/deleted').then(r => r.json());
+
+// Restaurar playbook
+await fetch(`/api/ansible/playbooks/${id}/restore`, { method: 'POST' });
+```
+
+Para más detalles, ver: `server/migrations/add_soft_delete_to_ansible_tasks.sql`
+
 ## 📚 Documentación Adicional
 
 - [Server README](server/README.md) - Backend API
 - [Client README](client/README.md) - Cliente de monitoreo  
 - [Frontend README](frontend/README.md) - Dashboard web
+- [Become Password Setup](BECOME_PASSWORD_SETUP.md) - Configuración de contraseñas sudo
 
 ## 🔒 Seguridad
 

@@ -1,12 +1,15 @@
-from pydantic import BaseModel
-from ..utils.db import Base
-from sqlalchemy import Integer, String, DateTime, ForeignKey, CheckConstraint, Boolean
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.sql import func
-from enum import Enum
 from datetime import datetime
+from enum import Enum
 from typing import Optional
+
+from pydantic import BaseModel
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import func
+
+from ..utils.db import Base
+
 
 class User(Base):
     __tablename__ = "users"
@@ -27,7 +30,10 @@ class User(Base):
     system_uid: Mapped[int] = mapped_column(Integer, unique=True, index=True)
     system_gid: Mapped[int] = mapped_column(Integer, default=2000)
     ssh_public_key: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
 
 class UserCreate(BaseModel):
     username: str
@@ -36,6 +42,7 @@ class UserCreate(BaseModel):
     is_admin: int = 0
     is_active: int = 1
     ssh_public_key: str | None = None
+
 
 class UserResponse(BaseModel):
     id: int
@@ -50,13 +57,17 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class ServerCreate(BaseModel):
     name: str
     ip_address: str
     ssh_user: str = "root"
-    ssh_password: str  # Password requerido para configurar SSH key
+    ssh_password: (
+        str  # Password requerido para configurar SSH key y usado para become/sudo
+    )
     ssh_port: int = 22
     description: str = ""
+
 
 class ServerResponse(BaseModel):
     id: int
@@ -66,9 +77,13 @@ class ServerResponse(BaseModel):
     ssh_user: str
     ssh_private_key_path: str | None
     ssh_status: str | None = "pending"
+    has_ssh_password: bool = (
+        False  # Indica si tiene contraseña guardada (usada para become/sudo)
+    )
 
     class Config:
         from_attributes = True
+
 
 class Server(Base):
     __tablename__ = "servers"
@@ -79,7 +94,13 @@ class Server(Base):
     status: Mapped[str] = mapped_column(String, default="offline")
     ssh_user: Mapped[str] = mapped_column(String, default="root")
     ssh_private_key_path: Mapped[str | None] = mapped_column(String, nullable=True)
-    ssh_status: Mapped[str] = mapped_column(String, default="pending")  # pending, deployed, failed
+    ssh_status: Mapped[str] = mapped_column(
+        String, default="pending"
+    )  # pending, deployed, failed
+    ssh_password_encrypted: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # Contraseña SSH encriptada (también usada para become/sudo)
+
 
 class Metric(Base):
     __tablename__ = "metrics"
@@ -92,6 +113,7 @@ class Metric(Base):
     timestamp: Mapped[str] = mapped_column(String)
     gpu_usage: Mapped[str] = mapped_column(String, default="N/A")
 
+
 class MetricCreate(BaseModel):
     server_id: int
     cpu_usage: str
@@ -99,6 +121,7 @@ class MetricCreate(BaseModel):
     disk_usage: str
     timestamp: str
     gpu_usage: str = "N/A"
+
 
 class MetricResponse(BaseModel):
     id: int
@@ -112,10 +135,12 @@ class MetricResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class AnsibleTaskCreate(BaseModel):
     name: str
     playbook: str
     inventory: str
+
 
 class AnsibleTaskResponse(BaseModel):
     id: int
@@ -126,6 +151,7 @@ class AnsibleTaskResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class AnsibleTask(Base):
     __tablename__ = "ansible_tasks"
 
@@ -133,6 +159,10 @@ class AnsibleTask(Base):
     name: Mapped[str] = mapped_column(String, unique=True, index=True)
     playbook: Mapped[str] = mapped_column(String)
     inventory: Mapped[str] = mapped_column(String)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class ExecutionState(str, Enum):
@@ -145,10 +175,16 @@ class ExecutedPlaybook(Base):
     __tablename__ = "executed_playbooks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    playbook_id: Mapped[int] = mapped_column(Integer, ForeignKey("ansible_tasks.id"), index=True)
+    playbook_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("ansible_tasks.id"), index=True
+    )
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
-    servers: Mapped[list[int]] = mapped_column(ARRAY(Integer))  # Lista de IDs de servidores
-    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    servers: Mapped[list[int]] = mapped_column(
+        ARRAY(Integer)
+    )  # Lista de IDs de servidores
+    executed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     state: Mapped[str] = mapped_column(String, index=True)  # success | error | dry
 
 
@@ -157,6 +193,7 @@ class ExecutedPlaybookCreate(BaseModel):
     user_id: int
     servers: list[int]
     state: ExecutionState
+
 
 class ExecutedPlaybookResponse(BaseModel):
     id: int
@@ -198,6 +235,7 @@ class TokenResponse(BaseModel):
     access_token: str
     must_change_password: bool = False  # Indica si debe cambiar contraseña
 
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
@@ -208,3 +246,52 @@ class VerifyTokenResponse(BaseModel):
     valid: bool
     user_id: Optional[int] = None
     username: Optional[str] = None
+    email: Optional[str] = None
+    is_admin: Optional[int] = None
+
+
+# Container Models
+class Container(Base):
+    __tablename__ = "containers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+    server_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("servers.id"), index=True
+    )
+    image: Mapped[str] = mapped_column(String)
+    ports: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="stopped")  # stopped, running
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False)
+    container_id: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # Docker container ID
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ContainerCreate(BaseModel):
+    name: str
+    server_id: int
+    image: str
+    ports: str | None = None
+
+
+class ContainerResponse(BaseModel):
+    id: int
+    name: str
+    user_id: int
+    username: str | None = None
+    server_id: int
+    server_name: str | None = None
+    image: str
+    ports: str | None
+    status: str
+    is_public: bool
+    container_id: str | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

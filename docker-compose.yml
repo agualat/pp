@@ -1,133 +1,151 @@
 version: "3.9"
 
 services:
-  db:
-    image: postgres:15
-    container_name: pp_db
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "${POSTGRES_PORT}:5432"
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+    db:
+        image: postgres:15
+        container_name: pp_db
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${POSTGRES_DB}
+        ports:
+            - "${POSTGRES_PORT}:5432"
+        volumes:
+            - db_data:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB}"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
 
-  api:
-    build:
-      context: .
-      dockerfile: server/Dockerfile
-    container_name: pp_api
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      SECRET_KEY: ${SECRET_KEY}
-      WORKERS: ${WORKERS}
-      PORT: ${PORT}
-      INSTALL_DEPS: "false"
-      CLIENT_URL: "http://client:8100"
-      DEV_MODE: "true"  # Cambiar a "false" para producción
-    depends_on:
-      db:
-        condition: service_healthy
-    # Puerto comentado - solo accesible internamente en la red Docker
-    # El frontend hace proxy a través de /api/*
-    # ports:
-    #   - "8000:8000"
-    volumes:
-      - ./server:/app/server  # Hot reload: montar código fuente
-      - ./playbooks:/app/playbooks  # Compartir directorio de playbooks
-      - ./ssh_keys:/app/ssh_keys  # Compartir claves SSH
-    restart: unless-stopped
+    api:
+        build:
+            context: .
+            dockerfile: server/Dockerfile
+        container_name: pp_api
+        environment:
+            DATABASE_URL: ${DATABASE_URL}
+            SECRET_KEY: ${SECRET_KEY}
+            WORKERS: ${WORKERS}
+            PORT: ${PORT}
+            INSTALL_DEPS: "false"
+            CLIENT_URL: "http://client:8100"
+            DEV_MODE: "true" # Cambiar a "false" para producción
+        depends_on:
+            db:
+                condition: service_healthy
+        # Puerto comentado - solo accesible internamente en la red Docker
+        # El frontend hace proxy a través de /api/*
+        # ports:
+        #   - "8000:8000"
+        volumes:
+            - ./server:/app/server # Hot reload: montar código fuente
+            - ./playbooks:/app/playbooks # Compartir directorio de playbooks
+            - ./ssh_keys:/app/ssh_keys # Compartir claves SSH
+        restart: unless-stopped
 
-  worker:
-    build:
-      context: .
-      dockerfile: server/Dockerfile
-    container_name: pp_worker
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - ./server:/app/server  # Hot reload: montar código fuente
-      - ./playbooks:/app/playbooks  # Compartir directorio de playbooks
-      - ./ssh_keys:/app/ssh_keys:ro  # Montar claves SSH (solo lectura)
-    entrypoint: []
-    command: ["celery", "-A", "server.utils.ansible_tasks", "worker", "--loglevel=INFO"]
-    restart: unless-stopped
+    worker:
+        build:
+            context: .
+            dockerfile: server/Dockerfile
+        container_name: pp_worker
+        environment:
+            DATABASE_URL: ${DATABASE_URL}
+        depends_on:
+            db:
+                condition: service_healthy
+        volumes:
+            - ./server:/app/server # Hot reload: montar código fuente
+            - ./playbooks:/app/playbooks # Compartir directorio de playbooks
+            - ./ssh_keys:/app/ssh_keys:ro # Montar claves SSH (solo lectura)
+        entrypoint: []
+        command:
+            [
+                "celery",
+                "-A",
+                "server.utils.ansible_tasks",
+                "worker",
+                "--loglevel=INFO",
+            ]
+        restart: unless-stopped
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    container_name: pp_frontend
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-      API_URL: http://api:8000  # URL interna para Server Components
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend:/app  # Hot reload: montar código fuente
-      - /app/node_modules  # Evitar sobrescribir node_modules del contenedor
-      - /app/.next  # Evitar sobrescribir cache de Next.js
-    restart: unless-stopped
+    frontend:
+        build:
+            context: ./frontend
+            dockerfile: Dockerfile.dev
+        container_name: pp_frontend
+        environment:
+            NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+            API_URL: http://api:8000 # URL interna para Server Components
+            NODE_OPTIONS: "--max-old-space-size=512" # Limitar uso de memoria a 512MB
+        ports:
+            - "3000:3000"
+        volumes:
+            - ./frontend:/app # Hot reload: montar código fuente
+            - /app/node_modules # Evitar sobrescribir node_modules del contenedor
+            - /app/.next # Evitar sobrescribir cache de Next.js
+        healthcheck:
+            test:
+                [
+                    "CMD-SHELL",
+                    "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1",
+                ]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+        restart: unless-stopped
 
-  client:
-    build:
-      context: .
-      dockerfile: client/dockerfile
-    container_name: pp_client
-    environment:
-      SERVER_HOST: api
-      SERVER_PORT: ${PORT}
-      SERVER_ID: 1
-      METRIC_INTERVAL: 0.5
-      DB_HOST: client_db
-      DB_PORT: 5432
-      DB_NAME: ${POSTGRES_DB}
-      NSS_DB_USER: ${POSTGRES_USER}
-      NSS_DB_PASSWORD: ${POSTGRES_PASSWORD}
-      CENTRAL_DB_HOST: ${CENTRAL_DB_HOST:-db}
-      CENTRAL_DB_PORT: ${CENTRAL_DB_PORT:-5432}
-      CENTRAL_DB_NAME: ${CENTRAL_DB_NAME:-${POSTGRES_DB}}
-      CENTRAL_DB_USER: ${CENTRAL_DB_USER:-${POSTGRES_USER}}
-      CENTRAL_DB_PASSWORD: ${CENTRAL_DB_PASSWORD:-${POSTGRES_PASSWORD}}
-      DEV_MODE: "true"  # Cambiar a "false" para producción
-    depends_on:
-      - client_db
-    ports:
-      - "8100:8100"
-    volumes:
-      - ./client:/app/client  # Hot reload: montar código fuente
-      - client_data:/app/client_data
-    restart: unless-stopped
+    client:
+        build:
+            context: .
+            dockerfile: client/dockerfile
+        container_name: pp_client
+        environment:
+            SERVER_HOST: api
+            SERVER_PORT: ${PORT}
+            SERVER_ID: 1
+            METRIC_INTERVAL: 0.5
+            DB_HOST: client_db
+            DB_PORT: 5432
+            DB_NAME: ${POSTGRES_DB}
+            NSS_DB_USER: ${POSTGRES_USER}
+            NSS_DB_PASSWORD: ${POSTGRES_PASSWORD}
+            CENTRAL_DB_HOST: ${CENTRAL_DB_HOST:-db}
+            CENTRAL_DB_PORT: ${CENTRAL_DB_PORT:-5432}
+            CENTRAL_DB_NAME: ${CENTRAL_DB_NAME:-${POSTGRES_DB}}
+            CENTRAL_DB_USER: ${CENTRAL_DB_USER:-${POSTGRES_USER}}
+            CENTRAL_DB_PASSWORD: ${CENTRAL_DB_PASSWORD:-${POSTGRES_PASSWORD}}
+            DEV_MODE: "true" # Cambiar a "false" para producción
+        depends_on:
+            - client_db
+        ports:
+            - "8100:8100"
+        volumes:
+            - ./client:/app/client # Hot reload: montar código fuente
+            - client_data:/app/client_data
+        restart: unless-stopped
 
-  client_db:
-    image: postgres:15
-    container_name: pp_client_db
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5433:5432"  # Exponer en puerto 5433 del host para NSS/PAM
-    volumes:
-      - client_db_data:/var/lib/postgresql/data
-      - ./client/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro  # Script de inicialización
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
+    client_db:
+        image: postgres:15
+        container_name: pp_client_db
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${POSTGRES_DB}
+        ports:
+            - "5433:5432" # Exponer en puerto 5433 del host para NSS/PAM
+        volumes:
+            - client_db_data:/var/lib/postgresql/data
+            - ./client/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro # Script de inicialización
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB}"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+        restart: unless-stopped
 
 volumes:
-  db_data:
-  client_data:
-  client_db_data:
+    db_data:
+    client_data:
+    client_db_data:
