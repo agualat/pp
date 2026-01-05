@@ -64,7 +64,7 @@ USERS=$(PGPASSWORD="${NSS_DB_PASSWORD}" psql \
   -p "${DB_PORT}" \
   -U "${NSS_DB_USER}" \
   -d "${DB_NAME}" \
-  -t -A -c \
+  -t -A -F'|' -c \
   "SELECT username, system_uid FROM users WHERE is_active = 1 ORDER BY system_uid" 2>&1)
 
 if [ $? -ne 0 ]; then
@@ -92,13 +92,13 @@ USERS_CREATED=0
 USERS_SKIPPED=0
 ERRORS=0
 
-# Process each user
+# Process each user from database
 while IFS='|' read -r username uid; do
   # Skip empty lines
   [ -z "$username" ] && continue
 
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
-  echo "👤 Processing: $username (UID: $uid, GID: $DOCKER_GID)" >&2
+  echo "👤 Processing DB user: $username (UID: $uid, GID: $DOCKER_GID)" >&2
 
   # Security check: Ensure user is NOT in privileged groups
   REMOVED_PRIVS=0
@@ -154,13 +154,15 @@ while IFS='|' read -r username uid; do
       echo "  ✅ System user $username created" >&2
     fi
   else
-    echo "  ℹ️  System user already exists" >&2
+    echo "  ℹ️  System user already exists (from DB)" >&2
 
     # Update GID to docker group if it's different
     CURRENT_GID=$(id -g "$username")
     if [ "$CURRENT_GID" -ne "$DOCKER_GID" ]; then
       echo "  🔄 Updating GID from $CURRENT_GID to $DOCKER_GID (docker)..." >&2
-      usermod -g "$DOCKER_GID" "$username" 2>/dev/null || {
+      usermod -g "$DOCKER_GID" "$username" 2>/dev/null && {
+        echo "  ✅ GID updated successfully" >&2
+      } || {
         echo "  ⚠️  Could not update GID" >&2
       }
     fi
@@ -223,11 +225,14 @@ echo "" >&2
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
 echo "📊 Docker Group Synchronization Summary" >&2
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+echo "  📦 Docker GID: $DOCKER_GID" >&2
 echo "  ✨ System users created: $USERS_CREATED" >&2
 echo "  ➕ Users added to docker: $USERS_ADDED" >&2
 echo "  ✅ Users already in docker: $USERS_ALREADY_IN_GROUP" >&2
 echo "  ⏭️  Users skipped: $USERS_SKIPPED" >&2
 echo "  ❌ Errors: $ERRORS" >&2
+echo "" >&2
+echo "  ℹ️  Only users from database were processed" >&2
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
 echo "" >&2
 

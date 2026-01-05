@@ -61,6 +61,27 @@ sudo ./check_user_permissions.sh
 sudo pkill -u bacunia
 ```
 
+**IMPORTANTE:** Los scripts **solo procesan usuarios que están en la base de datos** (tabla `users` con `is_active = 1`). No modifican otros usuarios del sistema.
+
+#### Ejemplo Visual:
+
+```
+Sistema tiene:
+  - root (UID 0)           → ❌ NO se modifica (no está en BD)
+  - staffteam (UID 1000)   → ❌ NO se modifica (no está en BD)
+  - bacunia (UID 2000)     → ✅ SÍ se procesa (está en BD)
+  - juan (UID 2001)        → ✅ SÍ se procesa (está en BD)
+  - postgres (UID 999)     → ❌ NO se modifica (no está en BD)
+
+Base de datos (users WHERE is_active = 1):
+  - bacunia (UID 2000)
+  - juan (UID 2001)
+
+Resultado:
+  - Solo bacunia y juan son procesados
+  - root, staffteam, postgres no son tocados
+```
+
 ### Opción B: Solo Sincronizar (Si no hay usuarios con admin)
 
 ```bash
@@ -150,13 +171,18 @@ su - bacunia -c "docker ps"
 ### 1. En cada cliente, `sync_docker_group.sh`:
 
 ```bash
+# Lee usuarios SOLO de la base de datos
+SELECT username, system_uid FROM users WHERE is_active = 1
+
 # Detecta GID de docker automáticamente
 DOCKER_GID=$(getent group docker | cut -d: -f3)
 # Resultado: 984 (o 999, 998, etc. según el sistema)
 
-# Crea usuarios con ese GID como grupo primario
+# Crea/actualiza SOLO esos usuarios con ese GID como grupo primario
 useradd -u 2000 -g $DOCKER_GID -d /home/bacunia bacunia
 ```
+
+**Nota:** Solo se procesan usuarios que existen en la tabla `users` de la base de datos. Usuarios del sistema que no están en la DB no son modificados.
 
 ### 2. Ventajas:
 
@@ -165,6 +191,7 @@ useradd -u 2000 -g $DOCKER_GID -d /home/bacunia bacunia
 - ✅ **Simple**: No crea grupos adicionales
 - ✅ **Directo**: Docker es el grupo primario (acceso inmediato)
 - ✅ **Consistente**: Mismo comportamiento en todos los clientes
+- ✅ **Seguro**: Solo modifica usuarios de la base de datos
 
 ---
 
@@ -187,12 +214,15 @@ Usuario creado en DB (sin GID específico)
           ↓
 Cliente ejecuta sync_docker_group.sh
           ↓
+Lee usuarios de BD (WHERE is_active = 1)
+          ↓
 Detecta GID de docker → Ejemplo: 984
           ↓
-Crea usuario con GID 984 (docker)
+Crea/actualiza SOLO esos usuarios con GID 984
           ↓
 Usuario tiene acceso directo a Docker ✅
 Usuario NO tiene sudo ✅
+Otros usuarios del sistema NO son modificados ✅
 ```
 
 ---
@@ -261,11 +291,11 @@ id
 
 ## 📝 Scripts Disponibles
 
-| Script | Propósito | Cuándo usar |
-|--------|-----------|-------------|
-| `sync_docker_group.sh` | Sincronizar usuarios con GID auto | Siempre |
-| `fix_user_gid.sh` | Limpiar usuarios con admin/sudo | Si hay problemas |
-| `check_user_permissions.sh` | Verificar estado | Para auditar |
+| Script | Propósito | Solo usuarios de BD | Cuándo usar |
+|--------|-----------|---------------------|-------------|
+| `sync_docker_group.sh` | Sincronizar usuarios con GID auto | ✅ Sí | Siempre |
+| `fix_user_gid.sh` | Limpiar usuarios con admin/sudo | ✅ Sí | Si hay problemas |
+| `check_user_permissions.sh` | Verificar estado | ✅ Sí | Para auditar |
 
 ---
 
