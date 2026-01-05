@@ -286,6 +286,7 @@ class ContainerResponse(BaseModel):
     username: str | None = None
     server_id: int
     server_name: str | None = None
+    server_ip: str | None = None
     image: str
     ports: str | None
     status: str

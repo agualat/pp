@@ -1,15 +1,16 @@
 """
 Router para sincronización de datos desde el servidor central
 """
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
-from typing import List, Optional
-import psycopg2
+
 import os
 import subprocess
 from datetime import datetime
-from dateutil import parser as date_parser
+from typing import List, Optional
 
+import psycopg2
+from dateutil import parser as date_parser
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/sync", tags=["Synchronization"])
 
@@ -21,7 +22,7 @@ def ensure_tables_exist(conn):
     """
     try:
         cur = conn.cursor()
-        
+
         # Crear tabla users si no existe
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -39,18 +40,20 @@ def ensure_tables_exist(conn):
                 CONSTRAINT username_valid_pattern CHECK (username ~ '^[a-z_][a-z0-9_-]*$')
             )
         """)
-        
+
         # Crear índices si no existen
         cur.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_users_system_uid ON users(system_uid)")
-        
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_users_system_uid ON users(system_uid)"
+        )
+
         conn.commit()
         cur.close()
-        
+
         print("✅ Database tables verified/created successfully")
         return True
-        
+
     except Exception as e:
         print(f"❌ Error creating tables: {str(e)}")
         conn.rollback()
@@ -59,6 +62,7 @@ def ensure_tables_exist(conn):
 
 class UserSync(BaseModel):
     """Modelo para sincronizar usuarios"""
+
     id: int
     username: str
     email: str
@@ -74,12 +78,14 @@ class UserSync(BaseModel):
 
 class SyncRequest(BaseModel):
     """Request de sincronización con metadatos"""
+
     server_url: Optional[str] = None  # URL del servidor central
     users: List[UserSync]
 
 
 class SyncResponse(BaseModel):
     """Respuesta de sincronización"""
+
     success: bool
     message: str
     users_synced: int
@@ -95,7 +101,7 @@ def get_db_connection():
         port=int(os.getenv("DB_PORT", "5432")),
         database=os.getenv("DB_NAME", "postgres"),
         user=os.getenv("NSS_DB_USER", "postgres"),
-        password=os.getenv("NSS_DB_PASSWORD", "postgres")
+        password=os.getenv("NSS_DB_PASSWORD", "postgres"),
     )
 
 
@@ -104,7 +110,7 @@ async def sync_users(sync_data: SyncRequest):
     """
     Sincroniza la lista completa de usuarios desde el servidor central.
     También guarda la URL del servidor para sincronización de contraseñas.
-    
+
     Este endpoint:
     1. Verifica que las tablas existan (las crea si es necesario)
     2. Guarda la URL del servidor central en /etc/default/sssd-pgsql
@@ -115,37 +121,37 @@ async def sync_users(sync_data: SyncRequest):
     7. Regenera archivos NSS/PAM para autenticación SSH
     """
     users = sync_data.users
-    
+
     # Guardar SERVER_URL si fue proporcionado
     if sync_data.server_url:
         try:
             config_file = "/etc/default/sssd-pgsql"
             config_lines = []
             server_url_exists = False
-            
+
             # Leer configuración existente si existe
             if os.path.exists(config_file):
-                with open(config_file, 'r') as f:
+                with open(config_file, "r") as f:
                     for line in f:
-                        if line.startswith('SERVER_URL='):
-                            config_lines.append(f'SERVER_URL={sync_data.server_url}\n')
+                        if line.startswith("SERVER_URL="):
+                            config_lines.append(f"SERVER_URL={sync_data.server_url}\n")
                             server_url_exists = True
                         else:
                             config_lines.append(line)
-            
+
             # Si no existe la línea, agregarla
             if not server_url_exists:
-                config_lines.append(f'SERVER_URL={sync_data.server_url}\n')
-            
+                config_lines.append(f"SERVER_URL={sync_data.server_url}\n")
+
             # Escribir configuración actualizada
-            with open(config_file, 'w') as f:
+            with open(config_file, "w") as f:
                 f.writelines(config_lines)
-            
+
             print(f"✅ SERVER_URL auto-configurado: {sync_data.server_url}")
         except Exception as e:
             print(f"⚠️  No se pudo auto-configurar SERVER_URL: {str(e)}")
             # No fallar la sincronización por esto
-    
+
     conn = None
     try:
         # Conectar a la base de datos
@@ -154,14 +160,14 @@ async def sync_users(sync_data: SyncRequest):
         except psycopg2.OperationalError as e:
             raise HTTPException(
                 status_code=503,
-                detail=f"Database connection failed: {str(e)}. Please verify that client_db is running."
+                detail=f"Database connection failed: {str(e)}. Please verify that client_db is running.",
             )
         except Exception as e:
             raise HTTPException(
                 status_code=500,
-                detail=f"Unexpected error connecting to database: {str(e)}"
+                detail=f"Unexpected error connecting to database: {str(e)}",
             )
-        
+
         # Verificar/crear tablas
         try:
             ensure_tables_exist(conn)
@@ -170,18 +176,18 @@ async def sync_users(sync_data: SyncRequest):
                 conn.close()
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to initialize database tables: {str(e)}"
+                detail=f"Failed to initialize database tables: {str(e)}",
             )
-        
+
         cur = conn.cursor()
-        
+
         users_created = 0
         users_updated = 0
         users_deleted = 0
-        
+
         # IDs de usuarios que vienen del servidor central
         central_user_ids = {user.id for user in users}
-        
+
         # Obtener IDs de usuarios locales
         try:
             cur.execute("SELECT id FROM users")
@@ -191,9 +197,9 @@ async def sync_users(sync_data: SyncRequest):
                 conn.close()
             raise HTTPException(
                 status_code=500,
-                detail=f"Error querying users table: {str(e)}. Table may not exist or be corrupted."
+                detail=f"Error querying users table: {str(e)}. Table may not exist or be corrupted.",
             )
-        
+
         # Procesar cada usuario del servidor central
         for user in users:
             try:
@@ -204,90 +210,99 @@ async def sync_users(sync_data: SyncRequest):
                         created_at_value = date_parser.parse(created_at_value)
                     except:
                         created_at_value = None
-                
+
                 # Verificar si el usuario existe localmente
                 cur.execute("SELECT id FROM users WHERE id = %s", (user.id,))
                 existing = cur.fetchone()
-                
+
                 if existing:
                     # Actualizar usuario existente
                     try:
-                        cur.execute("""
-                            UPDATE users 
-                            SET username = %s, 
-                                email = %s, 
-                                password_hash = %s, 
-                                is_admin = %s, 
-                                is_active = %s, 
+                        cur.execute(
+                            """
+                            UPDATE users
+                            SET username = %s,
+                                email = %s,
+                                password_hash = %s,
+                                is_admin = %s,
+                                is_active = %s,
                                 must_change_password = %s,
-                                system_uid = %s, 
-                                system_gid = %s, 
+                                system_uid = %s,
+                                system_gid = %s,
                                 ssh_public_key = %s,
                                 created_at = %s
                             WHERE id = %s
-                        """, (
-                            user.username,
-                            user.email,
-                            user.password_hash,
-                            user.is_admin,
-                            user.is_active,
-                            user.must_change_password,
-                            user.system_uid,
-                            user.system_gid,
-                            user.ssh_public_key,
-                            created_at_value,
-                            user.id
-                        ))
+                        """,
+                            (
+                                user.username,
+                                user.email,
+                                user.password_hash,
+                                user.is_admin,
+                                user.is_active,
+                                user.must_change_password,
+                                user.system_uid,
+                                user.system_gid,
+                                user.ssh_public_key,
+                                created_at_value,
+                                user.id,
+                            ),
+                        )
                         users_updated += 1
                     except psycopg2.IntegrityError as e:
-                        print(f"⚠️  Warning: Could not update user {user.username}: {str(e)}")
+                        print(
+                            f"⚠️  Warning: Could not update user {user.username}: {str(e)}"
+                        )
                         conn.rollback()
                         continue
                 else:
                     # Crear nuevo usuario
                     try:
-                        cur.execute("""
-                            INSERT INTO users 
-                            (id, username, email, password_hash, is_admin, is_active, 
+                        cur.execute(
+                            """
+                            INSERT INTO users
+                            (id, username, email, password_hash, is_admin, is_active,
                              must_change_password, system_uid, system_gid, ssh_public_key, created_at)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            user.id,
-                            user.username,
-                            user.email,
-                            user.password_hash,
-                            user.is_admin,
-                            user.is_active,
-                            user.must_change_password,
-                            user.system_uid,
-                            user.system_gid,
-                            user.ssh_public_key,
-                            created_at_value
-                        ))
+                        """,
+                            (
+                                user.id,
+                                user.username,
+                                user.email,
+                                user.password_hash,
+                                user.is_admin,
+                                user.is_active,
+                                user.must_change_password,
+                                user.system_uid,
+                                user.system_gid,
+                                user.ssh_public_key,
+                                created_at_value,
+                            ),
+                        )
                         users_created += 1
                     except psycopg2.IntegrityError as e:
-                        print(f"⚠️  Warning: Could not create user {user.username}: {str(e)}")
+                        print(
+                            f"⚠️  Warning: Could not create user {user.username}: {str(e)}"
+                        )
                         conn.rollback()
                         continue
-                
+
             except Exception as e:
                 print(f"❌ Error processing user {user.username}: {str(e)}")
                 conn.rollback()
                 continue
-        
+
         # Eliminar usuarios que ya no existen en el servidor central
         users_to_delete = local_user_ids - central_user_ids
         if users_to_delete:
             try:
                 cur.execute(
-                    "DELETE FROM users WHERE id = ANY(%s)",
-                    (list(users_to_delete),)
+                    "DELETE FROM users WHERE id = ANY(%s)", (list(users_to_delete),)
                 )
                 users_deleted = len(users_to_delete)
             except Exception as e:
                 print(f"⚠️  Warning: Could not delete users: {str(e)}")
                 conn.rollback()
-        
+
         # Commit todos los cambios
         try:
             conn.commit()
@@ -296,26 +311,25 @@ async def sync_users(sync_data: SyncRequest):
             if conn:
                 conn.close()
             raise HTTPException(
-                status_code=500,
-                detail=f"Failed to commit database changes: {str(e)}"
+                status_code=500, detail=f"Failed to commit database changes: {str(e)}"
             )
-        
+
         cur.close()
         conn.close()
-        
+
         # Crear directorios necesarios si no existen
         os.makedirs("/var/lib/extrausers", exist_ok=True)
         os.makedirs("/etc", exist_ok=True)
-        
+
         # Regenerar archivos passwd y shadow con manejo de errores
         errors = []
-        
+
         try:
             result = subprocess.run(
                 ["bash", "/app/client/utils/generate_passwd_from_db.sh"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
             )
             if result.returncode != 0:
                 error_msg = f"generate_passwd_from_db.sh failed (exit {result.returncode}): {result.stderr}"
@@ -331,13 +345,13 @@ async def sync_users(sync_data: SyncRequest):
             error_msg = f"generate_passwd_from_db.sh exception: {str(e)}"
             print(f"ERROR: {error_msg}")
             errors.append(error_msg)
-        
+
         try:
             result = subprocess.run(
                 ["bash", "/app/client/utils/generate_shadow_from_db.sh"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
             )
             if result.returncode != 0:
                 error_msg = f"generate_shadow_from_db.sh failed (exit {result.returncode}): {result.stderr}"
@@ -353,43 +367,48 @@ async def sync_users(sync_data: SyncRequest):
             error_msg = f"generate_shadow_from_db.sh exception: {str(e)}"
             print(f"ERROR: {error_msg}")
             errors.append(error_msg)
-        
+
+        # Mensaje informativo sobre permisos de Docker
+        print("")
+        print("ℹ️  IMPORTANTE: Los usuarios sincronizados necesitan permisos de Docker")
+        print("   Para darles acceso, ejecuta en el host:")
+        print("   sudo bash /ruta/a/add_users_to_docker.sh")
+        print("")
+
         # Si hay errores, incluirlos en la respuesta pero no fallar
         message = f"Successfully synchronized {len(users)} users"
         if errors:
             message += f" (Warnings: {'; '.join(errors)})"
-        
+
         return SyncResponse(
             success=True,
             message=message,
             users_synced=len(users),
             users_created=users_created,
             users_updated=users_updated,
-            users_deleted=users_deleted
+            users_deleted=users_deleted,
         )
-    
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
-    
+
     except psycopg2.OperationalError as e:
         raise HTTPException(
             status_code=503,
-            detail=f"Database operational error: {str(e)}. Please check database connectivity."
+            detail=f"Database operational error: {str(e)}. Please check database connectivity.",
         )
-    
+
     except psycopg2.Error as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Database error during synchronization: {str(e)}"
+            status_code=500, detail=f"Database error during synchronization: {str(e)}"
         )
-    
+
     except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Unexpected error synchronizing users: {str(e)}"
+            status_code=500, detail=f"Unexpected error synchronizing users: {str(e)}"
         )
-    
+
     finally:
         # Asegurar que la conexión se cierre
         if conn and not conn.closed:

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authService, api } from "@/lib/api";
 import CreateContainerModal from "@/app/components/CreateContainerModal";
+import ConfirmDialog from "@/app/components/ConfirmDialog";
+import InfoDialog from "@/app/components/InfoDialog";
 import {
     cn,
     getButtonClass,
@@ -17,6 +19,7 @@ interface Container {
     name: string;
     server_id: number;
     server_name: string;
+    server_ip?: string;
     image: string;
     status: string;
     ports: string;
@@ -31,6 +34,21 @@ export default function UserContainersPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [containerToDelete, setContainerToDelete] = useState<number | null>(
+        null,
+    );
+    const [showSshDialog, setShowSshDialog] = useState(false);
+    const [sshCommand, setSshCommand] = useState("");
+    const [sshPort, setSshPort] = useState("");
+
+    const setShowDeleteConfirmGlobal = (value: boolean) => {
+        setShowDeleteConfirm(value);
+    };
+
+    const setContainerToDeleteGlobal = (value: number | null) => {
+        setContainerToDelete(value);
+    };
 
     useEffect(() => {
         const verifyAuth = async () => {
@@ -64,21 +82,100 @@ export default function UserContainersPage() {
         }
     }, [currentUser]);
 
-    const loadContainers = async () => {
+    const loadContainers = async (showLoading = true) => {
         try {
-            setLoading(true);
-            // TODO: Implementar endpoint en backend
-            // const response = await api.get('/containers/my');
-            // setContainers(response.data);
+            if (showLoading) {
+                setLoading(true);
+            }
+            setError("");
 
-            // Por ahora, datos de ejemplo
-            setContainers([]);
+            const response = await fetch("/api/containers/my", {
+                headers: {
+                    Authorization: `Bearer ${localStorage.getItem("token")}`,
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error("Error al cargar contenedores");
+            }
+
+            const data = await response.json();
+            setContainers(data);
         } catch (error) {
             console.error("Error loading containers:", error);
             setError("Error al cargar contenedores");
         } finally {
-            setLoading(false);
+            if (showLoading) {
+                setLoading(false);
+            }
         }
+    };
+
+    // Función para actualizar un contenedor localmente
+    const updateContainerLocally = (
+        containerId: number,
+        updates: Partial<Container>,
+    ) => {
+        setContainers((prev) =>
+            prev.map((c) => (c.id === containerId ? { ...c, ...updates } : c)),
+        );
+    };
+
+    // Función para eliminar un contenedor localmente
+    const removeContainerLocally = (containerId: number) => {
+        setContainers((prev) => prev.filter((c) => c.id !== containerId));
+    };
+
+    // Agregar contenedor localmente (sin refrescar)
+    const addContainerLocally = (newContainer: any) => {
+        // Mapear la respuesta del backend al formato de Container
+        const container: Container = {
+            id: newContainer.id,
+            name: newContainer.name,
+            server_id: newContainer.server_id,
+            server_name: newContainer.server_name || "Servidor",
+            server_ip: newContainer.server_ip,
+            image: newContainer.image,
+            status: newContainer.status || "stopped",
+            ports: newContainer.ports || "",
+            created_at: newContainer.created_at || new Date().toISOString(),
+        };
+        setContainers((prev) => [...prev, container]);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (containerToDelete === null) return;
+
+        try {
+            const response = await fetch(
+                `/api/containers/${containerToDelete}`,
+                {
+                    method: "DELETE",
+                    headers: {
+                        Authorization: `Bearer ${localStorage.getItem("token")}`,
+                    },
+                },
+            );
+
+            if (!response.ok) {
+                throw new Error("Error al eliminar contenedor");
+            }
+
+            // Eliminar localmente sin refrescar
+            removeContainerLocally(containerToDelete);
+            setShowDeleteConfirm(false);
+            setContainerToDelete(null);
+        } catch (error) {
+            console.error("Error deleting container:", error);
+            alert("Error al eliminar el contenedor");
+            setShowDeleteConfirm(false);
+            setContainerToDelete(null);
+        }
+    };
+
+    const handleCancelDelete = () => {
+        setShowDeleteConfirm(false);
+        setContainerToDelete(null);
     };
 
     if (authLoading || loading) {
@@ -106,28 +203,53 @@ export default function UserContainersPage() {
                     </p>
                 </div>
 
-                <button
-                    onClick={() => setShowCreateModal(true)}
-                    className={cn(
-                        getButtonClass("primary"),
-                        "flex items-center",
-                    )}
-                >
-                    <svg
-                        className="icon-sm mr-2"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
+                <div className="flex space-x-3">
+                    <button
+                        onClick={() => loadContainers()}
+                        className={cn(
+                            getButtonClass("secondary"),
+                            "flex items-center",
+                        )}
+                        title="Actualizar lista"
                     >
-                        <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M12 4v16m8-8H4"
-                        />
-                    </svg>
-                    Crear Contenedor
-                </button>
+                        <svg
+                            className="icon-sm mr-2"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                            />
+                        </svg>
+                        Actualizar
+                    </button>
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        className={cn(
+                            getButtonClass("primary"),
+                            "flex items-center",
+                        )}
+                    >
+                        <svg
+                            className="icon-sm mr-2"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M12 4v16m8-8H4"
+                            />
+                        </svg>
+                        Crear Contenedor
+                    </button>
+                </div>
             </div>
 
             {/* Error message */}
@@ -233,6 +355,16 @@ export default function UserContainersPage() {
                             key={container.id}
                             container={container}
                             onRefresh={loadContainers}
+                            onUpdate={updateContainerLocally}
+                            onDelete={removeContainerLocally}
+                            containerToDelete={containerToDelete}
+                            setShowDeleteConfirm={setShowDeleteConfirmGlobal}
+                            setContainerToDelete={setContainerToDeleteGlobal}
+                            onShowSshDialog={(command, port) => {
+                                setSshCommand(command);
+                                setSshPort(port);
+                                setShowSshDialog(true);
+                            }}
                         />
                     ))}
                 </div>
@@ -242,10 +374,37 @@ export default function UserContainersPage() {
             <CreateContainerModal
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
-                onSuccess={() => {
+                onSuccess={(newContainer) => {
                     setShowCreateModal(false);
-                    loadContainers();
+                    addContainerLocally(newContainer);
+                    // Opcionalmente, refrescar en background para confirmar
+                    // loadContainers(false);
                 }}
+            />
+
+            {/* Delete Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={showDeleteConfirm}
+                title="Eliminar Contenedor"
+                message={`¿Estás seguro de que deseas eliminar este contenedor? Esta acción no se puede deshacer.`}
+                confirmText="Eliminar"
+                cancelText="Cancelar"
+                onConfirm={handleConfirmDelete}
+                onCancel={handleCancelDelete}
+                type="danger"
+            />
+
+            <InfoDialog
+                isOpen={showSshDialog}
+                title="Comando SSH"
+                message={
+                    sshCommand
+                        ? `Copia este comando para conectarte al contenedor:\n\nDespués de conectarte, accede a: http://localhost:${sshPort}`
+                        : "No hay información de conexión disponible"
+                }
+                copyText={sshCommand || undefined}
+                onClose={() => setShowSshDialog(false)}
+                type="info"
             />
         </div>
     );
@@ -254,20 +413,55 @@ export default function UserContainersPage() {
 function ContainerCard({
     container,
     onRefresh,
+    onUpdate,
+    onDelete,
+    containerToDelete,
+    setShowDeleteConfirm,
+    setContainerToDelete,
+    onShowSshDialog,
 }: {
     container: Container;
     onRefresh: () => void;
+    onUpdate: (containerId: number, updates: Partial<Container>) => void;
+    onDelete: (containerId: number) => void;
+    containerToDelete: number | null;
+    setShowDeleteConfirm: (value: boolean) => void;
+    setContainerToDelete: (value: number | null) => void;
+    onShowSshDialog: (command: string, port: string) => void;
 }) {
     const [loading, setLoading] = useState(false);
+    const [localStatus, setLocalStatus] = useState(container.status);
 
     const handleStart = async () => {
         setLoading(true);
+        // Actualización optimista
+        setLocalStatus("starting");
+        onUpdate(container.id, { status: "starting" });
+
         try {
-            // TODO: Implementar endpoint
-            // await api.post(`/containers/${container.id}/start`);
-            onRefresh();
+            const response = await fetch(
+                `/api/containers/${container.id}/start`,
+                {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${localStorage.getItem("token")}`,
+                    },
+                },
+            );
+
+            if (!response.ok) {
+                throw new Error("Error al iniciar contenedor");
+            }
+
+            // Actualizar estado a running
+            setLocalStatus("running");
+            onUpdate(container.id, { status: "running" });
         } catch (error) {
             console.error("Error starting container:", error);
+            alert("Error al iniciar el contenedor");
+            // Revertir en caso de error
+            setLocalStatus(container.status);
+            onUpdate(container.id, { status: container.status });
         } finally {
             setLoading(false);
         }
@@ -275,38 +469,63 @@ function ContainerCard({
 
     const handleStop = async () => {
         setLoading(true);
+        // Actualización optimista
+        setLocalStatus("stopping");
+        onUpdate(container.id, { status: "stopping" });
+
         try {
-            // TODO: Implementar endpoint
-            // await api.post(`/containers/${container.id}/stop`);
-            onRefresh();
+            const response = await fetch(
+                `/api/containers/${container.id}/stop`,
+                {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${localStorage.getItem("token")}`,
+                    },
+                },
+            );
+
+            if (!response.ok) {
+                throw new Error("Error al detener contenedor");
+            }
+
+            // Actualizar estado a stopped
+            setLocalStatus("stopped");
+            onUpdate(container.id, { status: "stopped" });
         } catch (error) {
             console.error("Error stopping container:", error);
+            alert("Error al detener el contenedor");
+            // Revertir en caso de error
+            setLocalStatus(container.status);
+            onUpdate(container.id, { status: container.status });
         } finally {
             setLoading(false);
         }
     };
 
-    const handleDelete = async () => {
-        if (
-            !confirm("¿Estás seguro de que quieres eliminar este contenedor?")
-        ) {
+    const handleConnect = () => {
+        if (!container.server_ip || !container.ports) {
+            onShowSshDialog("", "");
             return;
         }
 
-        setLoading(true);
-        try {
-            // TODO: Implementar endpoint
-            // await api.delete(`/containers/${container.id}`);
-            onRefresh();
-        } catch (error) {
-            console.error("Error deleting container:", error);
-        } finally {
-            setLoading(false);
+        // Extraer el puerto del host del formato "4000:8080"
+        const portMatch = container.ports.match(/^(\d+):/);
+        if (!portMatch) {
+            onShowSshDialog("", "");
+            return;
         }
+
+        const hostPort = portMatch[1];
+        const localPort = hostPort; // Usar el mismo puerto localmente
+
+        // Construir el comando SSH con port forwarding
+        const command = `ssh -L ${localPort}:localhost:${localPort} root@${container.server_ip}`;
+
+        onShowSshDialog(command, localPort);
     };
 
     return (
-        <div className="card">
+        <div className="card hover:shadow-lg transition-shadow">
             <div className="flex items-start justify-between mb-4">
                 <div>
                     <h3 className="font-semibold text-gray-900 dark:text-white">
@@ -316,13 +535,23 @@ function ContainerCard({
                 </div>
                 <span
                     className={cn(
-                        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border",
-                        container.status === "running"
-                            ? "bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-200 dark:border-green-700"
-                            : "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600",
+                        "badge border",
+                        localStatus === "running"
+                            ? "badge-success border-green-200 dark:border-green-700"
+                            : localStatus === "starting"
+                              ? "badge-info border-blue-200 dark:border-blue-700"
+                              : localStatus === "stopping"
+                                ? "badge-warning border-yellow-200 dark:border-yellow-700"
+                                : "badge-neutral border-gray-200 dark:border-gray-600",
                     )}
                 >
-                    {container.status === "running" ? "Activo" : "Detenido"}
+                    {localStatus === "running"
+                        ? "Activo"
+                        : localStatus === "starting"
+                          ? "Iniciando..."
+                          : localStatus === "stopping"
+                            ? "Deteniendo..."
+                            : "Detenido"}
                 </span>
             </div>
 
@@ -364,33 +593,87 @@ function ContainerCard({
             </div>
 
             <div className="flex items-center space-x-2">
-                {container.status === "running" ? (
+                {(localStatus === "running" || localStatus === "starting") && (
                     <button
-                        onClick={handleStop}
-                        disabled={loading}
-                        className={cn(
-                            getButtonClass("secondary"),
-                            "flex-1 text-sm",
-                        )}
-                    >
-                        Detener
-                    </button>
-                ) : (
-                    <button
-                        onClick={handleStart}
+                        onClick={handleConnect}
                         disabled={loading}
                         className={cn(
                             getButtonClass("primary"),
                             "flex-1 text-sm",
+                            loading && "opacity-50 cursor-not-allowed",
+                        )}
+                        title="Copiar comando SSH"
+                    >
+                        <svg
+                            className="icon-sm mr-1 inline-block"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                            />
+                        </svg>
+                        Conectarse
+                    </button>
+                )}
+                {localStatus === "running" || localStatus === "starting" ? (
+                    <button
+                        onClick={handleStop}
+                        disabled={loading || localStatus === "stopping"}
+                        className={cn(
+                            getButtonClass("secondary"),
+                            "flex-1 text-sm",
+                            loading && "opacity-50 cursor-not-allowed",
                         )}
                     >
-                        Iniciar
+                        {loading && localStatus === "stopping" ? (
+                            <>
+                                <span className="inline-block animate-spin mr-2">
+                                    ⏳
+                                </span>
+                                Deteniendo...
+                            </>
+                        ) : (
+                            "Detener"
+                        )}
+                    </button>
+                ) : (
+                    <button
+                        onClick={handleStart}
+                        disabled={loading || localStatus === "starting"}
+                        className={cn(
+                            getButtonClass("primary"),
+                            "flex-1 text-sm",
+                            loading && "opacity-50 cursor-not-allowed",
+                        )}
+                    >
+                        {loading && localStatus === "starting" ? (
+                            <>
+                                <span className="inline-block animate-spin mr-2">
+                                    ⏳
+                                </span>
+                                Iniciando...
+                            </>
+                        ) : (
+                            "Iniciar"
+                        )}
                     </button>
                 )}
                 <button
-                    onClick={handleDelete}
-                    disabled={loading}
-                    className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 p-2"
+                    onClick={() => {
+                        setShowDeleteConfirm(true);
+                        setContainerToDelete(container.id);
+                    }}
+                    disabled={loading || containerToDelete === container.id}
+                    className={cn(
+                        "text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 p-2 transition-colors",
+                        (loading || containerToDelete === container.id) &&
+                            "opacity-50 cursor-not-allowed",
+                    )}
                     title="Eliminar"
                 >
                     <svg

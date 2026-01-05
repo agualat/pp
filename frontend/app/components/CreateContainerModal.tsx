@@ -13,7 +13,7 @@ interface Server {
 interface CreateContainerModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSuccess: () => void;
+    onSuccess: (newContainer: any) => void;
 }
 
 export default function CreateContainerModal({
@@ -186,7 +186,7 @@ export default function CreateContainerModal({
                 `Contenedor "${formData.name}" creado exitosamente 🎉`,
             );
             resetForm();
-            onSuccess();
+            onSuccess(data); // Pasar el contenedor creado al callback
             onClose();
         } catch (err) {
             const errorMessage =

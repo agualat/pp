@@ -50,7 +50,8 @@ export default function AllContainersPage() {
     const toast = useToast();
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [authLoading, setAuthLoading] = useState(true);
-    const [containers, setContainers] = useState<Container[]>([]);
+    const [allContainers, setAllContainers] = useState<Container[]>([]); // Todos los contenedores sin filtrar
+    const [containers, setContainers] = useState<Container[]>([]); // Contenedores filtrados
     const [servers, setServers] = useState<Server[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
@@ -63,7 +64,6 @@ export default function AllContainersPage() {
     const [containerNameSearch, setContainerNameSearch] = useState<string>("");
     const [showFilters, setShowFilters] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
-    const [showSyncDropdown, setShowSyncDropdown] = useState(false);
 
     useEffect(() => {
         checkAuth();
@@ -77,12 +77,55 @@ export default function AllContainersPage() {
         }
     }, [currentUser]);
 
-    // Aplicar filtros en tiempo real cuando cambian
+    // Aplicar filtros localmente en tiempo real cuando cambian
     useEffect(() => {
-        if (currentUser) {
-            fetchContainers();
+        if (allContainers.length > 0) {
+            applyFilters();
         }
-    }, [serverFilter, statusFilter, publicFilter, containerNameSearch]);
+    }, [
+        serverFilter,
+        statusFilter,
+        publicFilter,
+        containerNameSearch,
+        allContainers,
+    ]);
+
+    const applyFilters = () => {
+        let filtered = [...allContainers];
+
+        // Filtrar por servidor
+        if (serverFilter) {
+            filtered = filtered.filter(
+                (container) => container.server_id === parseInt(serverFilter),
+            );
+        }
+
+        // Filtrar por estado
+        if (statusFilter) {
+            filtered = filtered.filter(
+                (container) => container.status === statusFilter,
+            );
+        }
+
+        // Filtrar por visibilidad
+        if (publicFilter) {
+            const isPublic = publicFilter === "true";
+            filtered = filtered.filter(
+                (container) => container.is_public === isPublic,
+            );
+        }
+
+        // Filtrar por nombre
+        if (containerNameSearch.trim()) {
+            filtered = filtered.filter((container) =>
+                container.name
+                    .toLowerCase()
+                    .includes(containerNameSearch.toLowerCase()),
+            );
+        }
+
+        setContainers(filtered);
+    };
 
     const checkAuth = async () => {
         try {
@@ -133,19 +176,13 @@ export default function AllContainersPage() {
     const fetchContainers = async () => {
         try {
             // Solo mostrar loading completo en la carga inicial
-            if (containers.length === 0) {
+            if (allContainers.length === 0) {
                 setLoading(true);
             }
             setError("");
 
-            // Construir query params
-            const params = new URLSearchParams();
-            if (serverFilter) params.append("server_id", serverFilter);
-            if (statusFilter) params.append("status", statusFilter);
-            if (publicFilter) params.append("is_public", publicFilter);
-
-            const queryString = params.toString();
-            const url = `/api/containers/all${queryString ? `?${queryString}` : ""}`;
+            // Obtener TODOS los contenedores sin filtros del servidor
+            const url = `/api/containers/all`;
 
             const response = await fetch(url);
 
@@ -161,17 +198,9 @@ export default function AllContainersPage() {
 
             const data = await response.json();
 
-            // Filtrar por nombre localmente si hay búsqueda
-            let filteredData = data;
-            if (containerNameSearch.trim()) {
-                filteredData = data.filter((container: Container) =>
-                    container.name
-                        .toLowerCase()
-                        .includes(containerNameSearch.toLowerCase()),
-                );
-            }
-
-            setContainers(filteredData);
+            // Guardar todos los contenedores sin filtrar
+            setAllContainers(data);
+            // Los filtros se aplicarán automáticamente por el useEffect
         } catch (err) {
             setError(
                 err instanceof Error
@@ -188,7 +217,7 @@ export default function AllContainersPage() {
         setStatusFilter("");
         setPublicFilter("");
         setContainerNameSearch("");
-        // No necesitamos llamar fetchContainers() aquí porque el useEffect lo hará
+        // Los filtros se limpiarán automáticamente por el useEffect
     };
 
     const handleStartContainer = async (containerId: number) => {
@@ -267,40 +296,6 @@ export default function AllContainersPage() {
         }
     };
 
-    const handleSyncServer = async (serverId: number, serverName: string) => {
-        try {
-            toast.info(`Actualizando estado desde ${serverName}...`);
-            const response = await fetch(
-                `/api/containers/sync/server/${serverId}`,
-                {
-                    method: "POST",
-                },
-            );
-
-            if (response.ok) {
-                const data = await response.json();
-                const updated = data.update_result?.updated_count || 0;
-                toast.success(
-                    `Estado actualizado desde ${serverName}: ${updated} cambios ✅`,
-                );
-                fetchContainers();
-            } else {
-                let errorMsg = "Error al actualizar estado";
-                try {
-                    const data = await response.json();
-                    errorMsg = data.detail || errorMsg;
-                } catch {
-                    errorMsg = `Error ${response.status}: ${response.statusText}`;
-                }
-                toast.error(`❌ ${errorMsg}`);
-            }
-        } catch (err) {
-            const errorMessage =
-                err instanceof Error ? err.message : "Error de conexión";
-            toast.error(`❌ Error al actualizar estado: ${errorMessage}`);
-        }
-    };
-
     const handleSyncAllServers = async () => {
         try {
             toast.info("Actualizando estado desde todos los servidores...");
@@ -328,40 +323,6 @@ export default function AllContainersPage() {
             toast.error(
                 `❌ Error al actualizar estado desde todos los servidores: ${errorMessage}`,
             );
-        }
-    };
-
-    const handleGetServerStatus = async (
-        serverId: number,
-        serverName: string,
-    ) => {
-        try {
-            toast.info(`Obteniendo estado de contenedores en ${serverName}...`);
-            const response = await fetch(
-                `/api/containers/status/server/${serverId}`,
-            );
-
-            if (response.ok) {
-                const data = await response.json();
-                toast.success(
-                    `Estado obtenido: ${data.containers_count} contenedores en ${serverName}`,
-                );
-                console.log("Estado de contenedores:", data);
-                fetchContainers();
-            } else {
-                let errorMsg = "Error al obtener estado";
-                try {
-                    const data = await response.json();
-                    errorMsg = data.detail || errorMsg;
-                } catch {
-                    errorMsg = `Error ${response.status}: ${response.statusText}`;
-                }
-                toast.error(`❌ ${errorMsg}`);
-            }
-        } catch (err) {
-            const errorMessage =
-                err instanceof Error ? err.message : "Error de conexión";
-            toast.error(`❌ Error al obtener estado: ${errorMessage}`);
         }
     };
 
@@ -396,10 +357,10 @@ export default function AllContainersPage() {
     };
 
     const stats = {
-        total: containers.length,
-        running: containers.filter((c) => c.status === "running").length,
-        stopped: containers.filter((c) => c.status === "stopped").length,
-        public: containers.filter((c) => c.is_public).length,
+        total: allContainers.length,
+        running: allContainers.filter((c) => c.status === "running").length,
+        stopped: allContainers.filter((c) => c.status === "stopped").length,
+        public: allContainers.filter((c) => c.is_public).length,
     };
 
     if (authLoading || loading) {
@@ -444,12 +405,12 @@ export default function AllContainersPage() {
                             Nuevo Contenedor
                         </button>
                         <button
-                            onClick={() => fetchContainers()}
+                            onClick={handleSyncAllServers}
                             className={getButtonClass("secondary")}
-                            title="Actualizar"
+                            title="Sincronizar con todos los servidores"
                         >
                             <span className="mr-2">🔄</span>
-                            Actualizar
+                            Sincronizar
                         </button>
                     </div>
                 </div>
@@ -671,138 +632,6 @@ export default function AllContainersPage() {
                     )}
                 </div>
 
-                {/* Sección de Actualización de Estado - Dropdown */}
-                <div className={getCardClass()}>
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                                <span className="text-xl">🔄</span>
-                            </div>
-                            <div className="flex-1">
-                                <div className="flex items-center space-x-2">
-                                    <h3 className="text-lg font-semibold text-primary">
-                                        Actualización de Estado (Docker)
-                                    </h3>
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
-                                        {servers.filter((s) => s.id).length}{" "}
-                                        {servers.filter((s) => s.id).length ===
-                                        1
-                                            ? "servidor"
-                                            : "servidores"}
-                                    </span>
-                                </div>
-                                <p className="text-sm text-muted">
-                                    Sincroniza el estado real desde los
-                                    servidores
-                                </p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() =>
-                                setShowSyncDropdown(!showSyncDropdown)
-                            }
-                            className={cn(
-                                getButtonClass("secondary"),
-                                "transition-all duration-300",
-                                showSyncDropdown && "rotate-180",
-                            )}
-                            title={
-                                showSyncDropdown
-                                    ? "Ocultar opciones"
-                                    : "Mostrar opciones"
-                            }
-                        >
-                            <span className="text-lg">▼</span>
-                        </button>
-                    </div>
-
-                    <div
-                        className={cn(
-                            "overflow-hidden transition-all duration-300 ease-in-out",
-                            showSyncDropdown
-                                ? "max-h-[800px] opacity-100 mt-4"
-                                : "max-h-0 opacity-0",
-                        )}
-                    >
-                        <div className="pt-4 border-t border-border dark:border-dark-border space-y-4">
-                            {/* Actualizar todos */}
-                            <div className="space-y-2 p-3 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800">
-                                <p className="text-sm font-semibold text-blue-700 dark:text-blue-300 flex items-center space-x-2">
-                                    <span>🌐</span>
-                                    <span>Todos los Servidores</span>
-                                </p>
-                                <button
-                                    onClick={handleSyncAllServers}
-                                    className={cn(
-                                        getButtonClass("primary"),
-                                        "w-full justify-center",
-                                    )}
-                                    title="Actualizar estado desde todos los servidores activos"
-                                >
-                                    <span className="mr-2">🔄</span>
-                                    Actualizar Todos los Servidores
-                                </button>
-                            </div>
-
-                            {/* Por servidor específico */}
-                            <div className="space-y-2 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/30 border border-gray-200 dark:border-gray-700">
-                                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                                    <span>🖥️</span>
-                                    <span>Por Servidor Específico</span>
-                                </p>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                    {servers
-                                        .filter((s) => s.id)
-                                        .map((server) => (
-                                            <div
-                                                key={server.id}
-                                                className="flex gap-1"
-                                            >
-                                                <button
-                                                    onClick={() =>
-                                                        handleSyncServer(
-                                                            server.id,
-                                                            server.name,
-                                                        )
-                                                    }
-                                                    className={cn(
-                                                        getButtonClass(
-                                                            "secondary",
-                                                        ),
-                                                        "flex-1 text-sm justify-start",
-                                                    )}
-                                                    title={`Actualizar estado desde Docker en ${server.name}`}
-                                                >
-                                                    <span className="mr-2">
-                                                        🔄
-                                                    </span>
-                                                    {server.name}
-                                                </button>
-                                                <button
-                                                    onClick={() =>
-                                                        handleGetServerStatus(
-                                                            server.id,
-                                                            server.name,
-                                                        )
-                                                    }
-                                                    className={cn(
-                                                        getButtonClass(
-                                                            "secondary",
-                                                        ),
-                                                        "text-sm px-3",
-                                                    )}
-                                                    title={`Ver reporte detallado de Docker en ${server.name}`}
-                                                >
-                                                    <span>📊</span>
-                                                </button>
-                                            </div>
-                                        ))}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
                 {/* Error */}
                 {error && (
                     <div className={getAlertClass("error")}>
@@ -849,7 +678,7 @@ export default function AllContainersPage() {
                                             {serverFilter ||
                                             statusFilter ||
                                             publicFilter ||
-                                            userIdFilter
+                                            containerNameSearch
                                                 ? "Intenta ajustar los filtros de búsqueda"
                                                 : "Crea tu primer contenedor para comenzar"}
                                         </p>

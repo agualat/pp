@@ -20,6 +20,91 @@ from ..utils.docker_validators import (
 )
 
 
+def extract_host_ports(ports_string: str) -> List[int]:
+    """
+    Extrae los puertos del host desde el string de puertos.
+
+    Args:
+        ports_string: String con formato "4000:8080" o "4000:8080,4001:443"
+
+    Returns:
+        Lista de puertos del host (ej: [4000, 4001])
+    """
+    if not ports_string:
+        return []
+
+    ports = []
+    for mapping in ports_string.split(","):
+        mapping = mapping.strip()
+        if ":" in mapping:
+            try:
+                host_port = mapping.split(":")[0].strip()
+                ports.append(int(host_port))
+            except ValueError:
+                continue
+
+    return ports
+
+
+def find_next_available_port(used_ports: List[int], start: int = 4000) -> int:
+    """
+    Encuentra el primer puerto disponible, llenando huecos si existen.
+
+    Args:
+        used_ports: Lista de puertos ya en uso
+        start: Puerto inicial (por defecto 4000)
+
+    Returns:
+        Primer puerto disponible >= start
+    """
+    # Caso 1: No hay puertos usados
+    if not used_ports:
+        return start
+
+    # Ordenar los puertos usados
+    used_ports_sorted = sorted(used_ports)
+
+    # Buscar el primer hueco
+    current = start
+    for port in used_ports_sorted:
+        if port < start:
+            continue
+        if port == current:
+            current += 1
+        elif port > current:
+            # Encontramos un hueco
+            return current
+
+    # No hay huecos, devolver el siguiente después del último
+    return current
+
+
+def get_next_available_port(db: Session, server_id: int, start_port: int = 4000) -> int:
+    """
+    Obtiene el siguiente puerto disponible para un servidor específico.
+
+    Args:
+        db: Database session
+        server_id: ID del servidor
+        start_port: Puerto inicial (por defecto 4000)
+
+    Returns:
+        Puerto disponible (ej: 4002)
+    """
+    # Obtener todos los contenedores del servidor
+    containers = db.query(Container).filter(Container.server_id == server_id).all()
+
+    # Extraer todos los puertos del host en uso
+    used_ports = []
+    for container in containers:
+        if container.ports:
+            host_ports = extract_host_ports(container.ports)
+            used_ports.extend(host_ports)
+
+    # Encontrar el siguiente puerto disponible
+    return find_next_available_port(used_ports, start_port)
+
+
 def create_container(
     db: Session, container_data: ContainerCreate, user_id: int
 ) -> Container:
@@ -183,8 +268,15 @@ def create_container_with_docker(
     # Validar datos
     validate_container_name(container_data.name)
     validate_image_name(container_data.image)
-    if container_data.ports:
-        validate_ports(container_data.ports)
+
+    # Asignar puerto automáticamente si no se especificó
+    ports = container_data.ports
+    if not ports:
+        next_port = get_next_available_port(db, server.id)
+        ports = f"{next_port}:8080"
+        print(f"[Auto-assign] Puerto asignado automáticamente: {ports}")
+    else:
+        validate_ports(ports)
 
     # Crear registro en BD con estado "creating"
     container = Container(
@@ -192,7 +284,7 @@ def create_container_with_docker(
         user_id=user_id,
         server_id=container_data.server_id,
         image=container_data.image,
-        ports=container_data.ports,
+        ports=ports,
         status="creating",
         is_public=False,
     )
@@ -207,7 +299,7 @@ def create_container_with_docker(
             docker_id = docker.create_container(
                 name=container_data.name,
                 image=container_data.image,
-                ports=container_data.ports,
+                ports=ports,
                 restart_policy="unless-stopped",
             )
 
@@ -439,13 +531,21 @@ def create_colab_container_with_docker(
     if not container_name:
         container_name = f"colab_{username}"
 
+    # Configuración del contenedor Colab
+    image = "us-docker.pkg.dev/colab-images/public/runtime:latest"
+
+    # Asignar puerto automáticamente
+    next_port = get_next_available_port(db, server.id)
+    ports = f"{next_port}:8080"
+    print(f"[Colab Auto-assign] Puerto asignado automáticamente: {ports}")
+
     # Crear registro en BD con estado "creating"
     container = Container(
         name=container_name,
         user_id=user_id,
         server_id=server.id,
-        image="us-docker.pkg.dev/colab-images/public/runtime:latest",
-        ports=None,  # Los puertos son aleatorios con -P
+        image=image,
+        ports=ports,
         status="creating",
         is_public=False,
     )
@@ -456,29 +556,24 @@ def create_colab_container_with_docker(
     try:
         # Conectar con Docker en el servidor remoto
         with DockerRemoteManager(server) as docker:
-            # Crear contenedor Colab en Docker
-            docker_id, port_mappings = docker.create_colab_container(
-                username=username,
-                container_name=container_name,
+            # Crear contenedor Colab en Docker con el puerto asignado
+            docker_id = docker.create_container(
+                name=container_name,
+                image=image,
+                ports=ports,
+                restart_policy="unless-stopped",
             )
-
-            # Formatear puertos para almacenar en BD
-            if port_mappings:
-                ports_str = ", ".join(
-                    [f"{host}:{cont}" for cont, host in port_mappings.items()]
-                )
-                container.ports = ports_str
 
             # Actualizar container_id y status en BD
             container.container_id = docker_id
-            container.status = "running"  # Colab container se inicia automáticamente
+            container.status = "running"  # Docker run -d ya lo inicia
             db.commit()
             db.refresh(container)
 
             print(
                 f"✓ Colab container created successfully: {container.name} (ID: {docker_id[:12]})"
             )
-            print(f"✓ Port mappings: {port_mappings}")
+            print(f"✓ Port: {ports}")
             return container
 
     except (DockerImageNotFoundError, DockerRemoteError) as e:

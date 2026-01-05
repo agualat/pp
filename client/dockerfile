@@ -35,7 +35,11 @@ RUN pip install --no-cache-dir -r client/requirements.txt
 
 # Copy application code
 COPY client /app/client
-RUN chmod +x /app/client/utils/setup_nss_pam.sh || true
+RUN chmod +x /app/client/utils/setup_nss_pam.sh || true \
+    && chmod +x /app/client/utils/sync_docker_group.sh || true \
+    && chmod +x /app/client/utils/add_users_to_docker.sh || true \
+    && chmod +x /app/client/utils/generate_passwd_from_db.sh || true \
+    && chmod +x /app/client/utils/generate_shadow_from_db.sh || true
 
 # Entrypoint script
 COPY client/entrypoint.sh /app/entrypoint.sh
