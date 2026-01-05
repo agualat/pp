@@ -1,136 +1,84 @@
 # 🔐 Permisos Docker (sin Sudo)
 
-## 🎯 Solución Final - AUTOMÁTICA
+## 🎯 Resumen
 
-**El sistema detecta automáticamente el GID de Docker en cada cliente y lo usa como grupo primario de usuarios.**
+**Los usuarios tienen Docker como grupo primario (GID auto-detectado) y NO tienen sudo.**
 
-- ✅ GID de Docker detectado automáticamente (puede ser 984, 999, etc.)
-- ✅ Usuarios tienen Docker como grupo primario (acceso directo)
-- ❌ Sin grupos privilegiados: `sudo`, `admin`
-
----
-
-## ⚠️ El Problema que Encontraste
-
-```bash
-groups bacunia
-# bacunia : admin  ❌ INCORRECTO (GID 2000 = admin del sistema)
-```
-
-## ✅ La Solución
-
-El sistema ahora:
-1. **Detecta automáticamente el GID de docker** en cada cliente
-2. **Asigna ese GID como grupo primario** a los usuarios
-3. No necesita crear grupos adicionales ni GIDs fijos
-
-```bash
-groups bacunia
-# bacunia : docker  ✅ CORRECTO (GID auto-detectado)
-```
+- ✅ GID de Docker detectado automáticamente en cada cliente
+- ✅ Usuarios tienen acceso directo a Docker (grupo primario)
+- ❌ Usuarios NO tienen acceso sudo ni admin
 
 ---
 
-## 🚀 EJECUTAR EN SERVIDOR (Backend)
+## 🚀 Configuración Inicial (Una sola vez)
+
+### 1. En el Servidor (Backend)
 
 ```bash
-# Reiniciar para aplicar cambios en el modelo
+# Reiniciar servidor para aplicar cambios en el modelo
 docker compose restart server
 ```
 
-**Cambio:** `system_gid` ahora es `NULL` (se asigna automáticamente en cada cliente).
+**Cambio:** `system_gid` ahora es NULL (se asigna automáticamente en cada cliente).
 
----
-
-## 🚀 EJECUTAR EN CADA CLIENTE (Host)
-
-### Opción A: Script Completo (Recomendado)
+### 2. En Cada Cliente (Host)
 
 ```bash
-# 1. Limpiar usuarios existentes con grupos incorrectos
-chmod +x fix_user_gid.sh
-sudo ./fix_user_gid.sh
+# Ejecutar scripts en orden:
 
-# 2. Sincronizar y crear usuarios con GID correcto
+# 1. Actualizar usuarios existentes
+chmod +x fix_user_gid.sh
+sudo bash fix_user_gid.sh
+
+# 2. Sincronizar usuarios y grupos
 sudo bash client/utils/sync_docker_group.sh
 
 # 3. Verificar resultado
 sudo ./check_user_permissions.sh
-
-# 4. Usuarios deben reconectar
-sudo pkill -u bacunia
 ```
 
-**IMPORTANTE:** Los scripts **solo procesan usuarios que están en la base de datos** (tabla `users` con `is_active = 1`). No modifican otros usuarios del sistema.
-
-#### Ejemplo Visual:
-
-```
-Sistema tiene:
-  - root (UID 0)           → ❌ NO se modifica (no está en BD)
-  - staffteam (UID 1000)   → ❌ NO se modifica (no está en BD)
-  - bacunia (UID 2000)     → ✅ SÍ se procesa (está en BD)
-  - juan (UID 2001)        → ✅ SÍ se procesa (está en BD)
-  - postgres (UID 999)     → ❌ NO se modifica (no está en BD)
-
-Base de datos (users WHERE is_active = 1):
-  - bacunia (UID 2000)
-  - juan (UID 2001)
-
-Resultado:
-  - Solo bacunia y juan son procesados
-  - root, staffteam, postgres no son tocados
-```
-
-### Opción B: Solo Sincronizar (Si no hay usuarios con admin)
-
-```bash
-# Si los usuarios aún no existen o no tienen problemas
-sudo bash client/utils/sync_docker_group.sh
-sudo ./check_user_permissions.sh
-```
+**Importante:** Usuarios conectados deben reconectar SSH para aplicar cambios.
 
 ---
 
 ## ✅ Resultado Esperado
 
 ```bash
-# Ver grupos
-groups bacunia
-# bacunia : docker  ✅
+# Ver usuario
+getent passwd bacunia
+# bacunia:x:2007:984:bacunia:/home/bacunia:/bin/bash
+#                ^^^ GID de docker (auto-detectado)
 
-# Ver GID (auto-detectado, puede variar por sistema)
+# Verificar grupos
 id bacunia
-# uid=2000(bacunia) gid=984(docker) groups=984(docker)
-# o
-# uid=2000(bacunia) gid=999(docker) groups=999(docker)
+# uid=2007(bacunia) gid=984(docker) groups=984(docker)
 
 # Verificar sin sudo
 sudo -l -U bacunia
-# User bacunia is not allowed to run sudo on hostname  ✅
+# User bacunia is not allowed to run sudo on hostname
 
-# Probar docker (debe funcionar sin sudo)
+# Probar Docker (sin sudo)
 su - bacunia -c "docker ps"
-# CONTAINER ID   IMAGE     COMMAND   ...  ✅
+# CONTAINER ID   IMAGE     ...  ✅ Funciona
 ```
 
 ---
 
 ## 📋 Lo Que Pueden Hacer los Usuarios
 
-### ✅ CON grupo `docker` (permitido)
+### ✅ CON Docker (permitido)
 
 ```bash
 docker ps                    # Ver contenedores
-docker run ubuntu            # Crear contenedores  
+docker run ubuntu            # Crear contenedores
 docker images                # Ver imágenes
 docker logs <container>      # Ver logs
 docker exec -it <cont> bash  # Entrar a contenedor
 docker-compose up            # Usar docker-compose
-docker build -t myapp .      # Construir imágenes
+docker build -t app .        # Construir imágenes
 ```
 
-### ❌ SIN grupo `sudo` (bloqueado)
+### ❌ SIN Sudo (bloqueado)
 
 ```bash
 apt-get install nginx        # ❌ Instalar software
@@ -142,240 +90,218 @@ sudo cualquier_cosa          # ❌ Ejecutar como root
 
 ---
 
-## 🔍 Comandos de Verificación
+## 🔄 Cómo Funciona
+
+### Sistema NSS con PostgreSQL
+
+```
+1. Usuario creado en BD (system_gid = NULL)
+          ↓
+2. Cliente ejecuta sync_docker_group.sh
+          ↓
+3. Detecta GID de docker → Ej: 984
+          ↓
+4. Actualiza BD: system_gid = 984
+          ↓
+5. Genera archivos NSS (/etc/passwd-pgsql)
+          ↓
+6. Usuario tiene docker como grupo primario ✅
+```
+
+### Scripts Principales
+
+| Script | Función | Cuándo ejecutar |
+|--------|---------|-----------------|
+| `fix_user_gid.sh` | Actualiza GID en BD y regenera NSS | Una vez (migración) |
+| `sync_docker_group.sh` | Sincroniza usuarios y grupos | Automático/manual |
+| `check_user_permissions.sh` | Verifica permisos | Para auditar |
+
+---
+
+## 🔍 Verificación
 
 ```bash
 # Ver GID de docker en este sistema
 getent group docker
-# docker:x:984:staffteam,bacunia,...
 
-# Ver quién tiene docker como grupo primario
+# Ver usuarios con docker como grupo primario
 getent passwd | grep ":$(getent group docker | cut -d: -f3):"
 
 # Ver quién tiene sudo (solo admins del sistema)
 getent group sudo
 
 # Verificar un usuario específico
-groups bacunia           # Ver grupos
-id bacunia               # Ver UID/GID completo
-sudo -l -U bacunia       # Verificar permisos sudo
-
-# Probar acceso docker
-su - bacunia -c "docker ps"
+groups <username>           # Debe mostrar: <username> : docker
+id <username>               # gid debe ser de docker
+sudo -l -U <username>       # Debe decir "not allowed"
 ```
 
 ---
 
-## 🎯 ¿Cómo Funciona?
+## 📝 Solo Usuarios de la Base de Datos
 
-### 1. En cada cliente, `sync_docker_group.sh`:
+**IMPORTANTE:** Los scripts **SOLO procesan usuarios de la base de datos** (`users` con `is_active = 1`).
+
+```
+Sistema tiene:
+  - root (UID 0)           → ❌ NO se modifica
+  - staffteam (UID 1000)   → ❌ NO se modifica
+  - bacunia (UID 2000)     → ✅ SÍ (está en BD)
+  - juan (UID 2001)        → ✅ SÍ (está en BD)
+
+Base de datos:
+  - bacunia, juan
+
+Resultado:
+  - Solo bacunia y juan son procesados
+  - root y staffteam no son tocados
+```
+
+---
+
+## 🆘 Solución de Problemas
+
+### Usuario tiene grupo admin
 
 ```bash
-# Lee usuarios SOLO de la base de datos
-SELECT username, system_uid FROM users WHERE is_active = 1
+# Ejecutar fix_user_gid.sh de nuevo
+sudo bash fix_user_gid.sh
 
-# Detecta GID de docker automáticamente
+# O manualmente
 DOCKER_GID=$(getent group docker | cut -d: -f3)
-# Resultado: 984 (o 999, 998, etc. según el sistema)
-
-# Crea/actualiza SOLO esos usuarios con ese GID como grupo primario
-useradd -u 2000 -g $DOCKER_GID -d /home/bacunia bacunia
-```
-
-**Nota:** Solo se procesan usuarios que existen en la tabla `users` de la base de datos. Usuarios del sistema que no están en la DB no son modificados.
-
-### 2. Ventajas:
-
-- ✅ **Automático**: No necesitas saber el GID de antemano
-- ✅ **Portable**: Funciona en cualquier sistema con Docker
-- ✅ **Simple**: No crea grupos adicionales
-- ✅ **Directo**: Docker es el grupo primario (acceso inmediato)
-- ✅ **Consistente**: Mismo comportamiento en todos los clientes
-- ✅ **Seguro**: Solo modifica usuarios de la base de datos
-
----
-
-## 📊 Comparación
-
-| Aspecto | Antes | Después |
-|---------|-------|---------|
-| Grupo primario | `admin` (GID 2000) ❌ | `docker` (GID auto) ✅ |
-| GID | Fijo 2000 | Auto-detectado |
-| Acceso Docker | Secundario | Primario (directo) |
-| Permisos sudo | ❌ Podían tener | ❌ Bloqueado |
-| Configuración | Manual | Automática |
-
----
-
-## 🔄 Flujo Completo
-
-```
-Usuario creado en DB (sin GID específico)
-          ↓
-Cliente ejecuta sync_docker_group.sh
-          ↓
-Lee usuarios de BD (WHERE is_active = 1)
-          ↓
-Detecta GID de docker → Ejemplo: 984
-          ↓
-Crea/actualiza SOLO esos usuarios con GID 984
-          ↓
-Usuario tiene acceso directo a Docker ✅
-Usuario NO tiene sudo ✅
-Otros usuarios del sistema NO son modificados ✅
-```
-
----
-
-## 🆘 Troubleshooting
-
-### Usuario sigue teniendo grupo admin
-
-```bash
-# Ver GID actual
-id bacunia
-
-# Si tiene GID 2000 (admin), ejecutar:
-sudo ./fix_user_gid.sh
-
-# O manualmente:
-DOCKER_GID=$(getent group docker | cut -d: -f3)
-sudo usermod -g $DOCKER_GID bacunia
-sudo deluser bacunia admin 2>/dev/null
-sudo pkill -u bacunia
-```
-
-### GID de docker diferente en clientes
-
-**Esto es normal y está bien.** Cada cliente detecta su propio GID de docker:
-
-- Cliente A: docker GID 984
-- Cliente B: docker GID 999
-- Cliente C: docker GID 998
-
-El script se adapta automáticamente a cada sistema.
-
-### Usuario no puede usar docker
-
-```bash
-# Verificar que docker es el grupo primario
-id bacunia
-# Debe mostrar: gid=XXX(docker)
-
-# Si no:
-DOCKER_GID=$(getent group docker | cut -d: -f3)
-sudo usermod -g $DOCKER_GID bacunia
+sudo -i
+echo "UPDATE users SET system_gid = $DOCKER_GID WHERE username = 'bacunia';" | \
+  psql -h localhost -p 5433 -U postgres -d postgres
+bash /usr/local/bin/generate_passwd_from_db.sh
+exit
 
 # Usuario debe reconectar
 sudo pkill -u bacunia
 ```
 
-### Cambios no se aplican
-
-El usuario **DEBE** cerrar sesión y volver a conectarse:
+### Usuario no puede usar Docker
 
 ```bash
-# Método 1: Forzar desde servidor
-sudo pkill -u bacunia
+# Verificar GID
+getent passwd <username>
+id <username>
 
-# Método 2: Usuario ejecuta
-exit
-# Luego volver a conectar por SSH
+# Si no tiene docker como GID primario
+sudo bash client/utils/sync_docker_group.sh
 
-# Verificar en nueva sesión
-groups
-id
+# Usuario debe reconectar
+sudo pkill -u <username>
 ```
 
----
+### Cambios no se aplican
 
-## 📝 Scripts Disponibles
+**El usuario DEBE reconectar SSH:**
 
-| Script | Propósito | Solo usuarios de BD | Cuándo usar |
-|--------|-----------|---------------------|-------------|
-| `sync_docker_group.sh` | Sincronizar usuarios con GID auto | ✅ Sí | Siempre |
-| `fix_user_gid.sh` | Limpiar usuarios con admin/sudo | ✅ Sí | Si hay problemas |
-| `check_user_permissions.sh` | Verificar estado | ✅ Sí | Para auditar |
+```bash
+# Método 1: Usuario cierra y vuelve a conectar
+exit
+# Reconectar por SSH
+
+# Método 2: Forzar desde servidor (cuando no esté trabajando)
+sudo pkill -u <username>
+```
 
 ---
 
 ## 🔒 Seguridad
 
-### ¿Es seguro que docker sea el grupo primario?
+### ¿Es seguro?
 
-**Sí, para este caso de uso:**
+Para este sistema de gestión de equipos de desarrollo: **Sí**
 
-- ✅ Los usuarios **necesitan** acceso a Docker (es el propósito)
+- ✅ Los usuarios **necesitan** Docker (es el propósito)
 - ✅ No tienen sudo (no pueden hacer `sudo su root`)
-- ✅ No están en grupos privilegiados (admin, sudo)
-- ⚠️ Tienen acceso completo a Docker daemon (esto es intencional)
+- ✅ Solo usuarios de confianza del equipo
 
-### Limitaciones conocidas del grupo docker
+### Nota sobre Docker
 
-Usuarios con acceso a Docker **técnicamente** podrían:
+Usuarios con acceso a Docker técnicamente podrían escalar privilegios:
 
 ```bash
-# Montar el filesystem del host (si son maliciosos)
+# Ejemplo (requiere conocimiento técnico)
 docker run -v /:/host -it ubuntu chroot /host
 ```
 
 **Mitigación:**
-
-1. **Confía en tus usuarios**: Solo crear cuentas para personas de confianza
-2. **Auditoría**: Monitorear comandos docker ejecutados
-3. **Logs**: Revisar `docker logs` y `journalctl`
-4. **Namespaces**: Configurar user namespaces en Docker (avanzado)
-
-Para este sistema de gestión de equipos de desarrollo, es aceptable.
+1. Solo dar acceso a personas de confianza
+2. Monitorear actividad: `docker events`
+3. Revisar logs: `journalctl -u docker`
+4. Auditar regularmente: `sudo ./check_user_permissions.sh`
 
 ---
 
-## ✅ Checklist de Implementación
+## 📊 Comparación Antes/Después
 
-- [ ] Servidor: `docker compose restart server`
-- [ ] Cliente: `sudo ./fix_user_gid.sh` (si hay usuarios con admin)
-- [ ] Cliente: `sudo bash client/utils/sync_docker_group.sh`
-- [ ] Cliente: `sudo ./check_user_permissions.sh`
-- [ ] Verificar: `groups bacunia` → debe mostrar `docker`
-- [ ] Verificar: `sudo -l -U bacunia` → debe decir "not allowed"
-- [ ] Probar: `su - bacunia -c "docker ps"` → debe funcionar
+| Aspecto | Antes | Después |
+|---------|-------|---------|
+| Grupo primario | admin (GID 2000) ❌ | docker (GID auto) ✅ |
+| GID | Fijo 2000 | Auto-detectado |
+| Acceso Docker | Secundario | Primario (directo) |
+| Permisos sudo | Podían tener ❌ | Bloqueado ✅ |
+| Configuración | Manual | Automática |
+| Portabilidad | Solo GID fijo | Cualquier sistema |
+
+---
+
+## ✅ Checklist
+
+Después de configurar:
+
+- [ ] `fix_user_gid.sh` ejecutado
+- [ ] `sync_docker_group.sh` ejecutado
+- [ ] `check_user_permissions.sh` sin errores
+- [ ] `getent passwd <username>` muestra GID de docker
+- [ ] `groups <username>` muestra: `<username> : docker`
+- [ ] `sudo -l -U <username>` dice "not allowed"
+- [ ] `docker ps` funciona para el usuario (sin sudo)
+- [ ] Usuarios reconectaron SSH
+
+---
+
+## 📞 Comandos Rápidos
+
+```bash
+# Ver estado
+getent group docker
+getent group sudo
+sudo ./check_user_permissions.sh
+
+# Verificar un usuario
+id <username>
+groups <username>
+sudo -l -U <username>
+su - <username> -c "docker ps"
+
+# Re-sincronizar todo
+sudo bash client/utils/sync_docker_group.sh
+
+# Forzar reconexión de usuario
+sudo pkill -u <username>
+```
 
 ---
 
 ## 🎓 Resumen Técnico
 
-**Cambio principal:**
-- `system_gid` en DB: `2000` → `NULL` (auto-detectado en cliente)
-- Grupo primario: `admin` → `docker` (GID variable)
+**¿Qué cambió?**
+- `system_gid` en BD: `2000` (admin) → `NULL` → Auto-detectado en cliente
+- Grupo primario: `admin` → `docker` (GID variable por sistema)
+- Archivos NSS: Regenerados desde BD con GID correcto
 
-**Resultado:**
-- Usuario tiene acceso directo a Docker (grupo primario)
-- Usuario NO tiene sudo (explícitamente bloqueado)
-- Funciona en cualquier sistema Linux con Docker
-- Zero configuración manual de GIDs
+**¿Por qué funciona?**
+- Sistema usa NSS con archivos generados desde PostgreSQL
+- `fix_user_gid.sh` actualiza BD y regenera archivos
+- `sync_docker_group.sh` mantiene sincronización
+- Usuarios obtienen cambios al reconectar SSH
 
----
-
-## 📞 Comandos de Emergencia
-
-```bash
-# Ver estado actual
-getent group docker
-getent group sudo
-getent group admin
-
-# Limpiar usuario específico
-DOCKER_GID=$(getent group docker | cut -d: -f3)
-sudo usermod -g $DOCKER_GID <username>
-sudo deluser <username> sudo 2>/dev/null
-sudo deluser <username> admin 2>/dev/null
-sudo pkill -u <username>
-
-# Verificar
-id <username>
-sudo -l -U <username>
-su - <username> -c "docker ps"
-```
+**¿Es automático para nuevos usuarios?**
+- Sí, `sync_docker_group.sh` detecta GID y actualiza BD automáticamente
+- No requiere configuración manual
 
 ---
 

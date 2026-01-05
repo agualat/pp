@@ -133,6 +133,15 @@ while IFS='|' read -r username uid; do
         }
       }
 
+      # Update GID in database for this user
+      PGPASSWORD="${NSS_DB_PASSWORD}" psql \
+        -h "${DB_HOST}" \
+        -p "${DB_PORT}" \
+        -U "${NSS_DB_USER}" \
+        -d "${DB_NAME}" \
+        -c "UPDATE users SET system_gid = $DOCKER_GID WHERE username = '$username' AND (system_gid IS NULL OR system_gid != $DOCKER_GID);" \
+        > /dev/null 2>&1 || echo "  ⚠️  Could not update GID in database" >&2
+
       # SECURITY: Ensure new user is NOT in sudo or admin groups
       if deluser "$username" sudo 2>/dev/null; then
         echo "  🔒 Removed from sudo group" >&2
@@ -162,9 +171,27 @@ while IFS='|' read -r username uid; do
       echo "  🔄 Updating GID from $CURRENT_GID to $DOCKER_GID (docker)..." >&2
       usermod -g "$DOCKER_GID" "$username" 2>/dev/null && {
         echo "  ✅ GID updated successfully" >&2
+
+        # Update GID in database
+        PGPASSWORD="${NSS_DB_PASSWORD}" psql \
+          -h "${DB_HOST}" \
+          -p "${DB_PORT}" \
+          -U "${NSS_DB_USER}" \
+          -d "${DB_NAME}" \
+          -c "UPDATE users SET system_gid = $DOCKER_GID WHERE username = '$username';" \
+          > /dev/null 2>&1 || echo "  ⚠️  Could not update GID in database" >&2
       } || {
         echo "  ⚠️  Could not update GID" >&2
       }
+    else
+      # Even if GID is correct, ensure it's in database
+      PGPASSWORD="${NSS_DB_PASSWORD}" psql \
+        -h "${DB_HOST}" \
+        -p "${DB_PORT}" \
+        -U "${NSS_DB_USER}" \
+        -d "${DB_NAME}" \
+        -c "UPDATE users SET system_gid = $DOCKER_GID WHERE username = '$username' AND system_gid IS NULL;" \
+        > /dev/null 2>&1
     fi
 
     # SECURITY: For existing users, verify they are NOT in privileged groups

@@ -61,6 +61,7 @@ sudo bash setup_nss_auto.sh
 - ✅ **Auto-configuración**: Detecta puertos y configuración automáticamente
 - ✅ **NSS/PAM Setup**: Configura autenticación completa
 - ✅ **Cambio de contraseña SSH**: Los usuarios pueden cambiar su contraseña via `passwd` y se sincroniza automáticamente a todos los servidores
+- ✅ **Permisos Docker**: Usuarios tienen acceso a Docker automáticamente (sin sudo)
 
 ## 📁 Estructura del Proyecto
 
@@ -288,6 +289,9 @@ curl http://localhost:8100/metrics/local
 # Verificar setup NSS/PAM en el host
 sudo systemctl status pgsql-users-sync.timer
 getent passwd  # Ver usuarios disponibles
+
+# Verificar permisos Docker
+sudo ./check_user_permissions.sh
 ```
 
 ## 🗑️ Soft Delete de Playbooks
