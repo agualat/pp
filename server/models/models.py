@@ -279,6 +279,9 @@ class ContainerCreate(BaseModel):
     server_id: int
     image: str
     ports: str | None = None
+    user_id: int | None = (
+        None  # Optional: para admin crear contenedor para otro usuario
+    )
 
 
 class ContainerResponse(BaseModel):

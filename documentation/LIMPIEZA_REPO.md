@@ -1,6 +1,6 @@
-# 🧹 Limpieza del Repositorio - Resumen
+# 🧹 Limpieza del Repositorio - Resumen Final
 
-## ✅ Archivos Eliminados
+## ✅ Archivos Eliminados (Histórico)
 
 ### Scripts obsoletos/duplicados:
 - ❌ `remove_sudo_from_db_users.sh` - Reemplazado por `fix_user_gid.sh`
@@ -13,44 +13,65 @@
 
 ---
 
-## 📁 Archivos Actuales (Limpios)
+## 📂 Nueva Estructura Organizada 
 
-### Scripts de Configuración (Raíz)
+### 📁 `scripts/` - Scripts organizados por categoría
+
+#### `scripts/setup/` - Configuración inicial (una sola vez)
 ```
-✅ fix_user_gid.sh                    - Migración: Actualiza GID en BD y regenera NSS
-✅ check_user_permissions.sh          - Verificación de permisos
-✅ setup_nss_auto.sh                  - Setup inicial de NSS/PAM
-✅ apply_docker_fix.sh                - Fix para Docker (si es necesario)
-✅ apply_soft_delete_migration.sh     - Migración soft delete
-✅ test_*.sh                          - Scripts de testing
+✅ setup_nss_auto.sh                  - Setup inicial de NSS/PAM para SSH
 ```
 
-### Scripts del Cliente
+#### `scripts/maintenance/` - Mantenimiento regular
 ```
-✅ client/utils/sync_docker_group.sh       - Sincronización principal (usa GID auto-detectado)
-✅ client/utils/generate_passwd_from_db.sh - Genera passwd desde BD
-✅ client/utils/generate_shadow_from_db.sh - Genera shadow desde BD
-✅ client/utils/sync_password_change.sh    - Hook PAM para cambio de contraseña
-✅ client/utils/check_docker.sh            - Verificación Docker
-✅ client/entrypoint.sh                    - Entrypoint del contenedor
+✅ check_user_permissions.sh          - Verificación y auditoría de permisos
 ```
 
-### Documentación
+#### `scripts/testing/` - Testing y debugging
 ```
-✅ README.md                          - README principal del proyecto
-✅ PERMISOS_DOCKER.md                - Documentación completa de permisos (ACTUALIZADA)
+✅ test_client_db.sh                  - Test conexión a client_db
+✅ test_container_sync.sh             - Test sincronización entre contenedores
+✅ test_sync.sh                       - Test sincronización general
+```
+
+### 📁 `migrations/archive/` - Migraciones ya ejecutadas (histórico)
+```
+✅ migrate_system_gid.sql             - ✅ Ejecutado: Hace system_gid nullable
+✅ fix_user_gid.sh                    - ✅ Ejecutado: Actualiza GID en BD y regenera NSS
+✅ apply_soft_delete_migration.sh     - ✅ Ejecutado: Agrega is_active y deleted_at
+✅ apply_docker_fix.sh                - ✅ Ejecutado: Monta socket Docker en cliente
+```
+
+**⚠️ Importante:** Estos archivos NO deben ejecutarse nuevamente. Se mantienen solo como referencia.
+
+### 📁 `client/utils/` - Scripts del cliente (uso continuo)
+```
+✅ sync_docker_group.sh               - Sincronización principal (usa GID auto-detectado)
+✅ generate_passwd_from_db.sh         - Genera passwd desde BD
+✅ generate_shadow_from_db.sh         - Genera shadow desde BD
+✅ sync_password_change.sh            - Hook PAM para cambio de contraseña
+✅ check_docker.sh                    - Verificación Docker
+```
+
+### 📁 Documentación
+```
+✅ README.md                          - README principal del proyecto (ACTUALIZADO)
+✅ PERMISOS_DOCKER.md                 - Documentación completa de permisos (ACTUALIZADO)
 ✅ ACTUALIZACION_CLIENTES_EXISTENTES.md
 ✅ BECOME_PASSWORD_SETUP.md
+✅ scripts/README.md                  - Índice de todos los scripts (NUEVO)
+✅ migrations/archive/README.md       - Historial de migraciones (NUEVO)
 ✅ client/README.md
 ✅ server/README.md
 ✅ frontend/README.md
 ```
 
-### SQL y Configuración
+### 📁 Configuración
 ```
-✅ migrate_system_gid.sql             - Migración SQL (nueva)
-✅ docker-compose.yml
-✅ docker-compose.client.yml
+✅ docker-compose.yml                 - Servicios principales
+✅ docker-compose.client.yml          - Cliente standalone
+✅ .env                               - Variables de entorno
+✅ .env.client                        - Variables del cliente
 ```
 
 ---
@@ -207,7 +228,7 @@ su - bacunia -c "docker ps"
 ## 🚀 Próximos Pasos
 
 1. **Servidor:** `docker compose restart server`
-2. **Clientes existentes:** Ejecutar `fix_user_gid.sh` (una sola vez)
+2. **Clientes existentes:** ✅ Migración ejecutada (`migrations/archive/fix_user_gid.sh`)
 3. **Nuevos usuarios:** Automático ✅
 4. **Mantenimiento:** `sync_docker_group.sh` + `check_user_permissions.sh`
 

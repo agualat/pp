@@ -2,6 +2,10 @@
 
 Sistema completo de gestión de infraestructura con monitoreo en tiempo real, ejecución de playbooks Ansible y gestión centralizada de usuarios con autenticación SSH respaldada por PostgreSQL.
 
+> 📚 **Documentación completa:** Ver [`documentation/`](documentation/) para guías detalladas, setup, troubleshooting y más.
+
+> ⚠️ **Cambio Importante:** Los usuarios ahora deben conectarse por SSH usando su **propio nombre de usuario** (no `root`). El modal de conexión es responsive y optimizado para comandos largos.
+
 ## 🚀 Características Principales
 
 - 🖥️ **Gestión de Servidores**: Registro y monitoreo de servidores remotos
@@ -13,6 +17,7 @@ Sistema completo de gestión de infraestructura con monitoreo en tiempo real, ej
 - 👥 **Gestión de Usuarios**: CRUD completo con carga masiva CSV/TXT
 - 🔐 **Autenticación SSH Unificada**: Login con PostgreSQL para todos los servidores
 - 🌐 **Dashboard Web**: Interfaz moderna con Next.js y Tailwind CSS
+- 🐳 **Gestión de Contenedores Docker**: Crear, iniciar, detener y eliminar contenedores desde el dashboard
 - 🔄 **Replicación en Tiempo Real**: Cambios de usuarios sincronizados instantáneamente a todos los clientes
 
 ## 🛠️ Stack Tecnológico
@@ -52,7 +57,7 @@ Para permitir que los usuarios de PostgreSQL puedan hacer SSH a los servidores:
 
 ```bash
 # En cada servidor host (funciona incluso con tabla users vacía)
-sudo bash setup_nss_auto.sh
+sudo bash scripts/setup/setup_nss_auto.sh
 ```
 
 **Características del script:**
@@ -62,6 +67,7 @@ sudo bash setup_nss_auto.sh
 - ✅ **NSS/PAM Setup**: Configura autenticación completa
 - ✅ **Cambio de contraseña SSH**: Los usuarios pueden cambiar su contraseña via `passwd` y se sincroniza automáticamente a todos los servidores
 - ✅ **Permisos Docker**: Usuarios tienen acceso a Docker automáticamente (sin sudo)
+- ✅ **Sin privilegios root**: Usuarios NO tienen sudo (mejor seguridad)
 
 ## 📁 Estructura del Proyecto
 
@@ -69,14 +75,55 @@ sudo bash setup_nss_auto.sh
 ├── server/                  # Backend API (FastAPI)
 ├── client/                  # Cliente de monitoreo
 ├── frontend/                # Dashboard web (Next.js)
+├── documentation/           # 📚 Documentación completa del proyecto
 ├── playbooks/               # Playbooks Ansible
 ├── ssh_keys/                # Claves SSH de servidores
+├── scripts/                 # Scripts de setup, mantenimiento y testing
+│   ├── setup/              # Configuración inicial (setup_nss_auto.sh)
+│   ├── maintenance/        # Mantenimiento (check_user_permissions.sh)
+│   └── testing/            # Testing y debugging
+├── migrations/              # Migraciones y archivos históricos
+│   └── archive/            # Migraciones ya ejecutadas
 ├── docker-compose.yml       # Servicios principales
-├── docker-compose.client.yml # Cliente standalone
-├── setup_nss_auto.sh        # Setup SSH automático mejorado
-├── test_sync.sh             # Test de sincronización
-└── system_status.json       # Estado del sistema
+└── docker-compose.client.yml # Cliente standalone
 ```
+
+## 📚 Documentación
+
+Para documentación detallada, consulta:
+
+- **[`CHANGELOG.md`](CHANGELOG.md)** - Historial de cambios y mejoras
+- **[`documentation/GUIA_RAPIDA.md`](documentation/GUIA_RAPIDA.md)** - Setup rápido y comandos comunes
+- **[`documentation/ESTRUCTURA_PROYECTO.md`](documentation/ESTRUCTURA_PROYECTO.md)** - Estructura completa del proyecto
+- **[`documentation/PERMISOS_DOCKER.md`](documentation/PERMISOS_DOCKER.md)** - Configuración de permisos Docker
+- **[`documentation/`](documentation/)** - Índice completo de toda la documentación
+
+## 🔐 Acceso SSH a Contenedores
+
+### Usuario Propio (No Root)
+
+Los usuarios se conectan con su propio username:
+
+```bash
+# ✅ Correcto
+ssh -L 4000:localhost:4000 tu_usuario@servidor.ip
+
+# ❌ Incorrecto (ya no usar)
+ssh -L 4000:localhost:4000 root@servidor.ip
+```
+
+**El comando SSH se genera automáticamente** en el modal cuando haces click en "Conectar" en tu contenedor.
+
+### Modal de Conexión Mejorado
+
+- ✨ **Responsive**: Se adapta a móvil y desktop
+- ✨ **Scroll horizontal**: Comandos largos son fáciles de leer
+- ✨ **Copiar con un click**: Botón con confirmación visual
+- ✨ **Dark mode**: Totalmente compatible
+- ✨ **Instrucciones claras**: Guía visual para usuarios
+
+```
+
 
 ## 🔑 Gestión de Usuarios
 
@@ -184,7 +231,7 @@ Regenera /etc/passwd y /etc/shadow
 
 ### Autenticación SSH
 
-Una vez configurado con `setup_nss_auto.sh`, los usuarios pueden hacer SSH a cualquier servidor:
+Una vez configurado con `scripts/setup/setup_nss_auto.sh`, los usuarios pueden hacer SSH a cualquier servidor:
 
 ```bash
 ssh juan@servidor.com  # Password inicial: juan2025
@@ -214,7 +261,7 @@ mv .env.client .env
 docker compose -f docker-compose.client.yml up -d
 
 # 3. Configurar SSH (en el host)
-sudo bash setup_nss_auto.sh
+sudo bash scripts/setup/setup_nss_auto.sh
 ```
 
 El cliente se auto-registrará y comenzará a enviar métricas al servidor central.
@@ -291,7 +338,10 @@ sudo systemctl status pgsql-users-sync.timer
 getent passwd  # Ver usuarios disponibles
 
 # Verificar permisos Docker
-sudo ./check_user_permissions.sh
+sudo bash scripts/maintenance/check_user_permissions.sh
+
+# Verificar configuración SSH/contenedores
+bash scripts/testing/verify_ssh_container_access.sh
 ```
 
 ## 🗑️ Soft Delete de Playbooks
@@ -348,6 +398,9 @@ Para más detalles, ver: `server/migrations/add_soft_delete_to_ansible_tasks.sql
 - ✅ Autenticación JWT para API
 - ✅ SSH con verificación contra PostgreSQL
 - ✅ Puerto 5433 solo accesible desde localhost
+- ✅ Usuarios sin privilegios sudo (acceso Docker via grupo)
+- ✅ Conexiones SSH con usuario propio (no root)
+- ✅ Reintentos automáticos con backoff exponencial
 - ⚠️ Cambiar credenciales por defecto en producción
 
 ## 📄 Licencia

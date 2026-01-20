@@ -337,9 +337,30 @@ async def create_new_container(
             detail=f"SSH not configured on server. Current status: {server.ssh_status}",
         )
 
+    # Determinar el usuario propietario del contenedor
+    target_user_id = user.id  # Por defecto, el usuario actual
+
+    # Si se especifica user_id y el usuario actual es admin, usar ese user_id
+    if container_data.user_id is not None:
+        if not user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only administrators can create containers for other users",
+            )
+
+        # Verificar que el usuario objetivo existe
+        target_user = get_user_by_id(db, container_data.user_id)
+        if not target_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with id {container_data.user_id} not found",
+            )
+
+        target_user_id = container_data.user_id
+
     # Verificar límite: 1 contenedor por servidor por usuario
     existing_count = count_user_containers_on_server(
-        db, user.id, container_data.server_id
+        db, target_user_id, container_data.server_id
     )
     if existing_count >= 1:
         raise HTTPException(
@@ -349,7 +370,9 @@ async def create_new_container(
 
     # Crear el contenedor en Docker y BD
     try:
-        container = create_container_with_docker(db, server, user.id, container_data)
+        container = create_container_with_docker(
+            db, server, target_user_id, container_data
+        )
 
         # Opcional: Actualizar estado desde el cliente después de crear
         # (no es crítico, el estado se actualizará en la próxima consulta)

@@ -8,25 +8,40 @@ interface Server {
     id: number;
     name: string;
     ssh_status: string;
+    status?: string;
+}
+
+interface User {
+    id: number;
+    username: string;
+    email: string;
+    is_admin: number;
+    is_active?: number;
 }
 
 interface CreateContainerModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess: (newContainer: any) => void;
+    adminMode?: boolean; // Si es true, permite seleccionar usuario
+    preselectedUserId?: number; // Usuario preseleccionado (opcional)
 }
 
 export default function CreateContainerModal({
     isOpen,
     onClose,
     onSuccess,
+    adminMode = false,
+    preselectedUserId,
 }: CreateContainerModalProps) {
     const toast = useToast();
     const [servers, setServers] = useState<Server[]>([]);
+    const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [currentUser, setCurrentUser] = useState<any>(null);
+    const [selectedUserId, setSelectedUserId] = useState<string>("");
 
     // Valores por defecto para Colab Runtime
     const DEFAULT_IMAGE =
@@ -36,6 +51,7 @@ export default function CreateContainerModal({
     const [formData, setFormData] = useState({
         name: "",
         server_id: "",
+        user_id: "", // Para modo admin
         image: DEFAULT_IMAGE,
         ports: "",
         // Configuración avanzada
@@ -50,8 +66,21 @@ export default function CreateContainerModal({
         if (isOpen) {
             fetchServers();
             fetchCurrentUser();
+            if (adminMode) {
+                fetchUsers();
+            }
         }
-    }, [isOpen]);
+    }, [isOpen, adminMode]);
+
+    useEffect(() => {
+        if (preselectedUserId) {
+            setSelectedUserId(preselectedUserId.toString());
+            setFormData((prev) => ({
+                ...prev,
+                user_id: preselectedUserId.toString(),
+            }));
+        }
+    }, [preselectedUserId]);
 
     const fetchCurrentUser = async () => {
         try {
@@ -69,6 +98,24 @@ export default function CreateContainerModal({
             }
         } catch (err) {
             console.error("Error fetching user:", err);
+        }
+    };
+
+    const fetchUsers = async () => {
+        try {
+            const response = await fetch("/api/users");
+            if (response.ok) {
+                const data = await response.json();
+                // Filtrar solo usuarios activos
+                const activeUsers = data
+                    .filter((u: User) => u.is_active === 1)
+                    .sort((a: User, b: User) =>
+                        a.username.localeCompare(b.username),
+                    );
+                setUsers(activeUsers);
+            }
+        } catch (err) {
+            console.error("Error fetching users:", err);
         }
     };
 
@@ -95,12 +142,34 @@ export default function CreateContainerModal({
     };
 
     const getDefaultVolumes = () => {
-        const username = currentUser?.username || "user";
+        let username = currentUser?.username || "user";
+
+        // En modo admin, usar el username del usuario seleccionado
+        if (adminMode && selectedUserId) {
+            const selectedUser = users.find(
+                (u) => u.id.toString() === selectedUserId,
+            );
+            if (selectedUser) {
+                username = selectedUser.username;
+            }
+        }
+
         return `/media:/media:ro,/mnt:/mnt:ro,/home/${username}:/home/${username}`;
     };
 
     const buildDockerCommand = () => {
-        const username = currentUser?.username || "user";
+        let username = currentUser?.username || "user";
+
+        // En modo admin, usar el username del usuario seleccionado
+        if (adminMode && selectedUserId) {
+            const selectedUser = users.find(
+                (u) => u.id.toString() === selectedUserId,
+            );
+            if (selectedUser) {
+                username = selectedUser.username;
+            }
+        }
+
         const containerName = formData.name || `colab_${username}`;
 
         let cmd = "docker run";
@@ -156,6 +225,11 @@ export default function CreateContainerModal({
                 ports: formData.ports || null,
             };
 
+            // En modo admin, agregar user_id
+            if (adminMode && selectedUserId) {
+                payload.user_id = parseInt(selectedUserId);
+            }
+
             // Si hay configuración avanzada, agregarla
             if (showAdvanced) {
                 payload.advanced_config = {
@@ -199,10 +273,25 @@ export default function CreateContainerModal({
     };
 
     const resetForm = () => {
-        const username = currentUser?.username || "user";
+        let username = currentUser?.username || "user";
+
+        // En modo admin, usar el username del usuario seleccionado
+        if (adminMode && selectedUserId) {
+            const selectedUser = users.find(
+                (u) => u.id.toString() === selectedUserId,
+            );
+            if (selectedUser) {
+                username = selectedUser.username;
+            }
+        }
+
         setFormData({
             name: `colab_${username}`,
             server_id: "",
+            user_id:
+                adminMode && preselectedUserId
+                    ? preselectedUserId.toString()
+                    : "",
             image: DEFAULT_IMAGE,
             ports: "",
             shm_size: DEFAULT_SHM_SIZE,
@@ -213,6 +302,11 @@ export default function CreateContainerModal({
         });
         setError("");
         setShowAdvanced(false);
+
+        // Mantener el usuario preseleccionado si existe
+        if (!preselectedUserId) {
+            setSelectedUserId("");
+        }
     };
 
     const handleClose = () => {
@@ -267,6 +361,68 @@ export default function CreateContainerModal({
 
                         {/* Form */}
                         <form onSubmit={handleSubmit} className="space-y-4">
+                            {/* Selector de Usuario (Solo en modo Admin) */}
+                            {adminMode && (
+                                <div>
+                                    <label className="label">Usuario *</label>
+                                    <select
+                                        value={selectedUserId}
+                                        onChange={(e) => {
+                                            const userId = e.target.value;
+                                            setSelectedUserId(userId);
+                                            setFormData({
+                                                ...formData,
+                                                user_id: userId,
+                                            });
+
+                                            // Actualizar el nombre del contenedor con el nuevo usuario
+                                            if (userId) {
+                                                const selectedUser = users.find(
+                                                    (u) =>
+                                                        u.id.toString() ===
+                                                        userId,
+                                                );
+                                                if (selectedUser) {
+                                                    setFormData((prev) => ({
+                                                        ...prev,
+                                                        name: `colab_${selectedUser.username}`,
+                                                        user_id: userId,
+                                                    }));
+                                                }
+                                            }
+                                        }}
+                                        className="select"
+                                        required
+                                        disabled={
+                                            loading || !!preselectedUserId
+                                        }
+                                    >
+                                        <option value="">
+                                            Selecciona un usuario
+                                        </option>
+                                        {users.map((user) => (
+                                            <option
+                                                key={user.id}
+                                                value={user.id}
+                                            >
+                                                {user.username} ({user.email})
+                                                {user.is_admin ? " 👑" : ""}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {users.length === 0 && (
+                                        <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                                            ⚠️ No hay usuarios activos
+                                            disponibles
+                                        </p>
+                                    )}
+                                    <p className="text-xs text-muted mt-1">
+                                        Selecciona el usuario propietario del
+                                        contenedor
+                                    </p>
+                                </div>
+                            )}
+
                             {/* Servidor */}
                             <div>
                                 <label className="label">Servidor *</label>
@@ -541,7 +697,11 @@ export default function CreateContainerModal({
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={loading || servers.length === 0}
+                                    disabled={
+                                        loading ||
+                                        servers.length === 0 ||
+                                        (adminMode && !selectedUserId)
+                                    }
                                     className={getButtonClass("primary")}
                                 >
                                     {loading ? (

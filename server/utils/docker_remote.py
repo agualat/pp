@@ -48,77 +48,125 @@ class DockerContainerNotFoundError(DockerRemoteError):
 class DockerRemoteManager:
     """Manage Docker containers on remote servers via SSH."""
 
-    def __init__(self, server: Server, timeout: int = 30):
+    def __init__(self, server: Server, timeout: int = 60, max_retries: int = 3):
         """
         Initialize Docker remote manager for a server.
 
         Args:
             server: Server model with SSH configuration
             timeout: SSH connection timeout in seconds
+            max_retries: Maximum number of connection retry attempts
         """
         self.server = server
         self.timeout = timeout
+        self.max_retries = max_retries
         self.ssh_client: Optional[paramiko.SSHClient] = None
 
     def _connect(self) -> paramiko.SSHClient:
         """
-        Establish SSH connection to the server.
+        Establish SSH connection to the server with retry logic.
 
         Returns:
             paramiko.SSHClient: Connected SSH client
 
         Raises:
-            DockerConnectionError: If connection fails
+            DockerConnectionError: If connection fails after all retries
         """
-        if (
-            self.ssh_client
-            and self.ssh_client.get_transport()
-            and self.ssh_client.get_transport().is_active()
-        ):
-            return self.ssh_client
+        # Check if we have an active and healthy connection
+        if self.ssh_client:
+            try:
+                transport = self.ssh_client.get_transport()
+                if transport and transport.is_active():
+                    # Verify socket is actually working by checking if it's open
+                    sock = transport.sock
+                    if sock and sock.fileno() != -1:
+                        return self.ssh_client
+                    else:
+                        print("[SSH] Socket is closed, forcing reconnection")
+            except (OSError, AttributeError) as e:
+                print(f"[SSH] Connection check failed: {e}, forcing reconnection")
 
+            # If we get here, connection is bad - close it
+            self._force_close()
+
+        # Get private key path
+        private_key_path = Path(f"/app/{self.server.ssh_private_key_path}")
+
+        if not private_key_path.exists():
+            raise DockerConnectionError(
+                f"SSH private key not found: {private_key_path}"
+            )
+
+        # Load private key
         try:
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            private_key = paramiko.RSAKey.from_private_key_file(str(private_key_path))
+        except Exception as e:
+            raise DockerConnectionError(f"Failed to load SSH private key: {e}")
 
-            # Get private key path
-            private_key_path = Path(f"/app/{self.server.ssh_private_key_path}")
+        # Retry connection with backoff
+        import time
 
-            if not private_key_path.exists():
-                raise DockerConnectionError(
-                    f"SSH private key not found: {private_key_path}"
+        last_error = None
+
+        for attempt in range(self.max_retries):
+            try:
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+                # Configure TCP keepalive
+                ssh.connect(
+                    hostname=self.server.ip_address,
+                    username=self.server.ssh_user,
+                    pkey=private_key,
+                    timeout=self.timeout,
+                    look_for_keys=False,
+                    allow_agent=False,
+                    banner_timeout=self.timeout,
                 )
 
-            # Load private key
-            private_key = paramiko.RSAKey.from_private_key_file(str(private_key_path))
+                # Enable TCP keepalive to prevent connection drops
+                transport = ssh.get_transport()
+                if transport:
+                    transport.set_keepalive(30)
 
-            # Connect using key-based authentication
-            ssh.connect(
-                hostname=self.server.ip_address,
-                username=self.server.ssh_user,
-                pkey=private_key,
-                timeout=self.timeout,
-                look_for_keys=False,
-                allow_agent=False,
-            )
+                self.ssh_client = ssh
+                print(
+                    f"[SSH] Connected to {self.server.ip_address} (attempt {attempt + 1})"
+                )
+                return ssh
 
-            self.ssh_client = ssh
-            return ssh
+            except paramiko.AuthenticationException as e:
+                # Don't retry authentication errors
+                raise DockerConnectionError(f"SSH authentication failed: {e}")
+            except (paramiko.SSHException, Exception) as e:
+                last_error = e
+                print(
+                    f"[SSH] Connection attempt {attempt + 1}/{self.max_retries} failed: {e}"
+                )
 
-        except paramiko.AuthenticationException as e:
-            raise DockerConnectionError(f"SSH authentication failed: {e}")
-        except paramiko.SSHException as e:
-            raise DockerConnectionError(f"SSH connection failed: {e}")
-        except Exception as e:
-            raise DockerConnectionError(
-                f"Failed to connect to {self.server.ip_address}: {e}"
-            )
+                # Close any partially opened connection
+                try:
+                    if ssh:
+                        ssh.close()
+                except:
+                    pass
+
+                # Wait before retrying (exponential backoff)
+                if attempt < self.max_retries - 1:
+                    wait_time = 2**attempt  # 1s, 2s, 4s
+                    print(f"[SSH] Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+
+        # All retries failed
+        raise DockerConnectionError(
+            f"Failed to connect to {self.server.ip_address} after {self.max_retries} attempts: {last_error}"
+        )
 
     def _execute_command(
         self, command: str, timeout: Optional[int] = None
     ) -> Tuple[int, str, str]:
         """
-        Execute a command on the remote server.
+        Execute a command on the remote server with retry on connection failure.
 
         Args:
             command: Command to execute
@@ -128,20 +176,46 @@ class DockerRemoteManager:
             Tuple of (exit_code, stdout, stderr)
 
         Raises:
-            DockerConnectionError: If SSH connection fails
+            DockerConnectionError: If SSH connection fails after retries
         """
-        ssh = self._connect()
+        import time
 
-        try:
-            stdin, stdout, stderr = ssh.exec_command(command, timeout=timeout)
-            exit_code = stdout.channel.recv_exit_status()
-            stdout_text = stdout.read().decode("utf-8").strip()
-            stderr_text = stderr.read().decode("utf-8").strip()
+        last_error = None
 
-            return exit_code, stdout_text, stderr_text
+        # Try to execute command, retry on connection errors
+        for attempt in range(2):  # 2 attempts total
+            try:
+                ssh = self._connect()
+                stdin, stdout, stderr = ssh.exec_command(command, timeout=timeout)
+                exit_code = stdout.channel.recv_exit_status()
+                stdout_text = stdout.read().decode("utf-8").strip()
+                stderr_text = stderr.read().decode("utf-8").strip()
 
-        except Exception as e:
-            raise DockerConnectionError(f"Failed to execute command: {e}")
+                return exit_code, stdout_text, stderr_text
+
+            except (OSError, EOFError) as e:
+                # These errors often indicate a bad connection
+                last_error = e
+                print(f"[SSH] Command execution failed (attempt {attempt + 1}/2): {e}")
+
+                # Force close and reconnect
+                self._force_close()
+
+                if attempt < 1:  # If not last attempt
+                    time.sleep(1)
+                    continue
+                else:
+                    raise DockerConnectionError(
+                        f"Failed to execute command after retries: {e}"
+                    )
+            except Exception as e:
+                # Other errors shouldn't retry
+                raise DockerConnectionError(f"Failed to execute command: {e}")
+
+        # Should not reach here, but just in case
+        raise DockerConnectionError(
+            f"Failed to execute command after retries: {last_error}"
+        )
 
     def check_docker_installed(self) -> Tuple[bool, str]:
         """
@@ -615,11 +689,36 @@ class DockerRemoteManager:
         except Exception as e:
             return f"Error retrieving logs: {e}"
 
-    def close(self):
-        """Close SSH connection."""
+    def _force_close(self):
+        """Force close SSH connection, even if there are errors."""
         if self.ssh_client:
-            self.ssh_client.close()
-            self.ssh_client = None
+            try:
+                transport = self.ssh_client.get_transport()
+                if transport:
+                    try:
+                        if transport.is_active():
+                            transport.close()
+                    except:
+                        pass
+                self.ssh_client.close()
+            except Exception as e:
+                print(f"[SSH] Error force closing connection: {e}")
+            finally:
+                self.ssh_client = None
+
+    def close(self):
+        """Close SSH connection safely."""
+        if self.ssh_client:
+            try:
+                transport = self.ssh_client.get_transport()
+                if transport and transport.is_active():
+                    transport.close()
+                self.ssh_client.close()
+                print(f"[SSH] Connection closed to {self.server.ip_address}")
+            except Exception as e:
+                print(f"[SSH] Error closing connection: {e}")
+            finally:
+                self.ssh_client = None
 
     def __enter__(self):
         """Context manager entry."""

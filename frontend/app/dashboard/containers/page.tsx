@@ -929,6 +929,7 @@ export default function AllContainersPage() {
                     onSuccess={() => {
                         fetchContainers();
                     }}
+                    adminMode={true}
                 />
             </div>
         </ProtectedRoute>

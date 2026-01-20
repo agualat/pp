@@ -354,6 +354,7 @@ export default function UserContainersPage() {
                         <ContainerCard
                             key={container.id}
                             container={container}
+                            currentUsername={currentUser?.username}
                             onRefresh={loadContainers}
                             onUpdate={updateContainerLocally}
                             onDelete={removeContainerLocally}
@@ -412,6 +413,7 @@ export default function UserContainersPage() {
 
 function ContainerCard({
     container,
+    currentUsername,
     onRefresh,
     onUpdate,
     onDelete,
@@ -421,6 +423,7 @@ function ContainerCard({
     onShowSshDialog,
 }: {
     container: Container;
+    currentUsername?: string;
     onRefresh: () => void;
     onUpdate: (containerId: number, updates: Partial<Container>) => void;
     onDelete: (containerId: number) => void;
@@ -518,8 +521,9 @@ function ContainerCard({
         const hostPort = portMatch[1];
         const localPort = hostPort; // Usar el mismo puerto localmente
 
-        // Construir el comando SSH con port forwarding
-        const command = `ssh -L ${localPort}:localhost:${localPort} root@${container.server_ip}`;
+        // Construir el comando SSH con port forwarding usando el nombre de usuario actual
+        const username = currentUsername || "root";
+        const command = `ssh -L ${localPort}:localhost:${localPort} ${username}@${container.server_ip}`;
 
         onShowSshDialog(command, localPort);
     };

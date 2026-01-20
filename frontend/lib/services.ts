@@ -291,8 +291,8 @@ export const usersService = {
     },
 
     async changePassword(id: number, newPassword: string) {
-        const response = await api.put(`/users/${id}/password`, null, {
-            params: { new_password: newPassword },
+        const response = await api.put(`/users/${id}/password`, {
+            new_password: newPassword,
         });
         return response.data;
     },

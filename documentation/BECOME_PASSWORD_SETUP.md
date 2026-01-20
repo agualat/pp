@@ -479,5 +479,3 @@ Si encuentras problemas:
 
 ---
 
-**Última actualización:** 2025-01
-**Versión:** 2.0

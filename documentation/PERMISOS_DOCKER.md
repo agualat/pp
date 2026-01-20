@@ -26,15 +26,15 @@ docker compose restart server
 ```bash
 # Ejecutar scripts en orden:
 
-# 1. Actualizar usuarios existentes
-chmod +x fix_user_gid.sh
-sudo bash fix_user_gid.sh
+# 1. Actualizar usuarios existentes (NOTA: Ya ejecutado, ver migrations/archive/)
+chmod +x migrations/archive/fix_user_gid.sh
+sudo bash migrations/archive/fix_user_gid.sh
 
 # 2. Sincronizar usuarios y grupos
 sudo bash client/utils/sync_docker_group.sh
 
 # 3. Verificar resultado
-sudo ./check_user_permissions.sh
+sudo bash scripts/maintenance/check_user_permissions.sh
 ```
 
 **Importante:** Usuarios conectados deben reconectar SSH para aplicar cambios.
@@ -112,9 +112,9 @@ sudo cualquier_cosa          # ❌ Ejecutar como root
 
 | Script | Función | Cuándo ejecutar |
 |--------|---------|-----------------|
-| `fix_user_gid.sh` | Actualiza GID en BD y regenera NSS | Una vez (migración) |
-| `sync_docker_group.sh` | Sincroniza usuarios y grupos | Automático/manual |
-| `check_user_permissions.sh` | Verifica permisos | Para auditar |
+| `migrations/archive/fix_user_gid.sh` | ✅ Actualiza GID en BD y regenera NSS | ✅ Ya ejecutado |
+| `client/utils/sync_docker_group.sh` | Sincroniza usuarios y grupos | Automático/manual |
+| `scripts/maintenance/check_user_permissions.sh` | Verifica permisos | Para auditar |
 
 ---
 
@@ -164,8 +164,8 @@ Resultado:
 ### Usuario tiene grupo admin
 
 ```bash
-# Ejecutar fix_user_gid.sh de nuevo
-sudo bash fix_user_gid.sh
+# Ejecutar fix_user_gid.sh de nuevo (NOTA: Ahora en migrations/archive/)
+sudo bash migrations/archive/fix_user_gid.sh
 
 # O manualmente
 DOCKER_GID=$(getent group docker | cut -d: -f3)
@@ -231,7 +231,7 @@ docker run -v /:/host -it ubuntu chroot /host
 1. Solo dar acceso a personas de confianza
 2. Monitorear actividad: `docker events`
 3. Revisar logs: `journalctl -u docker`
-4. Auditar regularmente: `sudo ./check_user_permissions.sh`
+4. Auditar regularmente: `sudo bash scripts/maintenance/check_user_permissions.sh`
 
 ---
 
@@ -252,9 +252,9 @@ docker run -v /:/host -it ubuntu chroot /host
 
 Después de configurar:
 
-- [ ] `fix_user_gid.sh` ejecutado
-- [ ] `sync_docker_group.sh` ejecutado
-- [ ] `check_user_permissions.sh` sin errores
+- [x] `migrations/archive/fix_user_gid.sh` ejecutado (migración completa)
+- [ ] `client/utils/sync_docker_group.sh` ejecutado
+- [ ] `scripts/maintenance/check_user_permissions.sh` sin errores
 - [ ] `getent passwd <username>` muestra GID de docker
 - [ ] `groups <username>` muestra: `<username> : docker`
 - [ ] `sudo -l -U <username>` dice "not allowed"
@@ -269,7 +269,7 @@ Después de configurar:
 # Ver estado
 getent group docker
 getent group sudo
-sudo ./check_user_permissions.sh
+sudo bash scripts/maintenance/check_user_permissions.sh
 
 # Verificar un usuario
 id <username>
@@ -295,8 +295,8 @@ sudo pkill -u <username>
 
 **¿Por qué funciona?**
 - Sistema usa NSS con archivos generados desde PostgreSQL
-- `fix_user_gid.sh` actualiza BD y regenera archivos
-- `sync_docker_group.sh` mantiene sincronización
+- `migrations/archive/fix_user_gid.sh` actualizó BD y regeneró archivos (✅ ya ejecutado)
+- `client/utils/sync_docker_group.sh` mantiene sincronización
 - Usuarios obtienen cambios al reconectar SSH
 
 **¿Es automático para nuevos usuarios?**
