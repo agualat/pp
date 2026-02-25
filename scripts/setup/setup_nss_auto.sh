@@ -307,22 +307,19 @@ echo "   ✅ Timer systemd configurado y activo"
 echo "🔄 Instalando sincronización de cambios de contraseña..."
 cp client/utils/sync_password_change.sh /usr/local/bin/sync_password_change.sh
 chmod 755 /usr/local/bin/sync_password_change.sh
-cp client/utils/update_extrausers_shadow.sh /usr/local/bin/update_extrausers_shadow.sh
-chmod 755 /usr/local/bin/update_extrausers_shadow.sh
 touch /var/log/password_sync.log
 chmod 666 /var/log/password_sync.log
 
-# Wire update_extrausers_shadow.sh into common-password BEFORE pam_unix so
-# managed users' new hash is written to /var/lib/extrausers/shadow (pam_unix
-# only writes to /etc/shadow and would otherwise fail with "token manipulation
-# error").  It exits 1 for local users so pam_unix handles them normally.
-if ! grep -q "update_extrausers_shadow.sh" /etc/pam.d/common-password; then
-  # Insert before the pam_unix line so it runs first
-  sed -i '/pam_unix.so.*use_authtok/i password\tsufficient\tpam_exec.so expose_authtok quiet /usr/local/bin/update_extrausers_shadow.sh' \
+# Wire pam_extrausers.so into common-password BEFORE pam_unix so managed users'
+# new hash is written to /var/lib/extrausers/shadow natively.  pam_unix only
+# writes to /etc/shadow and fails for extrausers users.
+# pam_extrausers.so is provided by libnss-extrausers (already installed).
+if ! grep -q "pam_extrausers" /etc/pam.d/common-password; then
+  sed -i '/pam_unix.so.*use_authtok/i password\tsufficient\tpam_extrausers.so obscure use_authtok try_first_pass sha512' \
     /etc/pam.d/common-password
-  echo "   ✅ Hook PAM para escritura en extrausers shadow instalado"
+  echo "   ✅ pam_extrausers.so añadido a common-password para escritura en extrausers shadow"
 else
-  echo "   ℹ️  Hook PAM de extrausers shadow ya estaba configurado"
+  echo "   ℹ️  pam_extrausers ya estaba configurado en common-password"
 fi
 
 # Agregar hook PAM para replicar el cambio al servidor central (runs after the
